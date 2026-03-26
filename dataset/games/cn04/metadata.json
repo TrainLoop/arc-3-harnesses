@@ -1,0 +1,17 @@
+{
+  "game_id": "cn04-65d47d14",
+  "title": "CN04",
+  "default_fps": 5,
+  "tags": [
+    "keyboard_click"
+  ],
+  "baseline_actions": [
+    16,
+    54,
+    69,
+    318,
+    208,
+    114
+  ],
+  "date_downloaded": "2026-03-26T17:51:42.327692+00:00"
+}
