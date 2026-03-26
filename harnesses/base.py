@@ -150,6 +150,8 @@ class Harness:
         level_strategies: dict[int, Strategy] = {}  # level_index -> strategy (for path lookup)
         current_level_index: int = 0
         level_initial_hash: str = ""
+        game_over_count: int = 0
+        max_game_overs: int = 5  # stop retrying after this many consecutive game overs
 
         # Initial observation
         obs_raw = env.reset()
@@ -223,6 +225,7 @@ class Harness:
                 prev_levels = obs.levels_completed
                 current_level_index = obs.levels_completed
                 level_actions = 0
+                game_over_count = 0  # reset since we made progress
                 level_initial_hash = obs.state_hash
                 level_initial_hashes[current_level_index] = obs.state_hash
                 self.strategy.reset()
@@ -232,6 +235,11 @@ class Harness:
 
             # Game over — reset and replay cached level paths
             if obs.game_state == "GAME_OVER":
+                game_over_count += 1
+                if game_over_count > max_game_overs:
+                    print(f"  [stuck] {game_over_count} consecutive game overs "
+                          f"at level {prev_levels + 1}, stopping")
+                    break
                 obs_raw = env.reset()
                 if obs_raw is None:
                     break
