@@ -17,12 +17,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from arc_agi import Arcade, OperationMode
 from harnesses.base import Harness, HarnessConfig
-from harnesses.strategies import GraphExplorerStrategy, RandomStrategy
+from harnesses.strategies import GraphExplorerStrategy, RandomStrategy, SourceSolverStrategy
 
 
 STRATEGY_REGISTRY = {
     "graph_explorer": GraphExplorerStrategy,
     "random": RandomStrategy,
+    "source_solver": SourceSolverStrategy,
 }
 
 

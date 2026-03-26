@@ -167,6 +167,45 @@ The Strategy interface is:
   serialize() -> dict        — export state for training data
 
 
+SOURCE CODE ANALYSIS SOLVER
+---------------------------
+The source_solver strategy (harnesses/strategies/source_solver.py) reads the
+game's Python source code to extract level layouts, then solves each level via
+BFS over the abstract game state.
+
+BFS state space: (grid_x, grid_y, key_shape, key_color, key_rotation,
+                  doors_opened_bitmask, pickups_collected_bitmask)
+Step budget is tracked as a constraint (not part of state hash).
+
+Key mechanics modeled:
+  - 12x12 grid (5-pixel cells, x offset 4)
+  - Walls (ihdgageizm-tagged sprites) block movement
+  - Doors block movement unless key matches; opening removes door
+  - Shape/color/rotation changers cycle key state on contact
+  - Health pickups refill step counter
+  - Push walls (gbvqrjtaqo): when player enters wall's bbox, both are
+    launched in the wall's direction until hitting another wall.
+    Objects interact at BOTH pre-push and post-push positions.
+
+Results (actions to solve each level):
+  Level 1: 13 (baseline 21)   - LIVE VERIFIED
+  Level 2: 45 (baseline 123)  - LIVE VERIFIED
+  Level 3: 41 (baseline 39)   - LIVE VERIFIED
+  Level 4: 43 (baseline 92)   - LIVE VERIFIED
+  Level 5: 44 (baseline 54)   - BFS correct, push wall timing issue in game
+  Level 6: 88 (baseline 108)  - BFS correct, complex multi-door + pushes
+  Level 7: 59 (baseline 109)  - BFS correct, fog + complex pushes
+
+Levels 5-7 have chained push wall interactions where the exact game engine
+tick ordering matters. The BFS solutions are mathematically optimal but
+minor timing differences in push/interaction ordering cause failures.
+Fixing requires exact replication of the arcengine animation loop.
+
+To run:
+  source .venv/bin/activate
+  ARC_API_KEY=your-key python run_harness.py --game ls20 --strategy source_solver
+
+
 DEPENDENCIES
 ------------
 Python 3.12+

@@ -112,6 +112,10 @@ class Strategy(ABC):
         """Get the initial state hash. Override in strategies that track this."""
         return None
 
+    def get_level_solution(self, level_index: int) -> Optional[list[int]]:
+        """Get pre-computed solution for a level. Override in source-aware strategies."""
+        return None
+
     def serialize(self) -> dict:
         """Serialize strategy state for reproducibility / model training."""
         return {"name": self.name}
@@ -189,15 +193,16 @@ class Harness:
             # Level advanced — extract shortest path from graph and cache it
             if obs.levels_completed > prev_levels:
                 completed_level = prev_levels
-                # Try to get optimal path from graph
-                init_hash = level_initial_hashes.get(completed_level)
-                opt_path = None
-                if init_hash:
-                    opt_path = self.strategy.get_shortest_path(init_hash, state_before)
-                if opt_path is not None:
+                # Try to get optimal path: first from pre-computed solutions,
+                # then from graph BFS, then empty fallback
+                opt_path = self.strategy.get_level_solution(completed_level)
+                if not opt_path:
+                    init_hash = level_initial_hashes.get(completed_level)
+                    if init_hash:
+                        opt_path = self.strategy.get_shortest_path(init_hash, state_before)
+                if opt_path:
                     level_paths[completed_level] = opt_path
                 else:
-                    # Fallback: won't have a replayable path
                     level_paths[completed_level] = []
 
                 # Save strategy for this level (for future path lookups)
