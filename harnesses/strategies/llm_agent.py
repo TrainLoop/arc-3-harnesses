@@ -148,9 +148,9 @@ class LLMAgentStrategy(Strategy):
             self._conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._conversation.append({"role": "user", "content": user_msg})
 
-        # Keep conversation manageable (last N messages + system)
-        if len(self._conversation) > 30:
-            self._conversation = [self._conversation[0]] + self._conversation[-20:]
+        # Keep conversation manageable — aggressive truncation for local models
+        if len(self._conversation) > 16:
+            self._conversation = [self._conversation[0]] + self._conversation[-8:]
 
         # LLM tool-calling loop
         for _round in range(self.max_tool_rounds):
@@ -178,8 +178,20 @@ class LLMAgentStrategy(Strategy):
                 })
 
                 for tc in response.tool_calls:
-                    print(f" {tc.name}", end="", flush=True)
+                    args_preview = ""
+                    if tc.name == "run_python":
+                        code = tc.arguments.get("code", "")
+                        args_preview = f" ({len(code)} chars)"
+                    elif tc.name == "submit_actions":
+                        actions = tc.arguments.get("actions", [])
+                        args_preview = f" ({len(actions)} actions)"
+                    print(f" {tc.name}{args_preview}", end="", flush=True)
                     result = self.tools.execute(tc.name, tc.arguments)
+
+                    # Log tool results briefly
+                    if tc.name == "run_python" and result.strip():
+                        preview = result.strip()[:120].replace('\n', ' ')
+                        print(f"\n      -> {preview}", end="", flush=True)
 
                     # Track special tool effects
                     if tc.name == "read_game_source":

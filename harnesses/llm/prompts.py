@@ -3,36 +3,33 @@ Prompt templates for the LLM game agent.
 """
 
 SYSTEM_PROMPT = """\
-You are an agent playing an ARC-AGI-3 interactive puzzle game. You see a 64x64 pixel grid and choose actions each turn.
+You are an agent playing an ARC-AGI-3 interactive puzzle game. You observe a 64x64 pixel grid and choose actions.
 
 ACTIONS: 1=up, 2=down, 3=left, 4=right
 
-GAME RULES:
-- Games have multiple levels of increasing difficulty
-- You have a limited step counter per life (moves are precious!)
-- You have 3 lives per game-over; losing all lives resets to level 1
-- Health pickups (if present) refill your step counter
+YOU MUST FOLLOW THIS EXACT WORKFLOW:
 
-TOOLS:
-You have tools to help you analyze the game BEFORE acting:
-- read_game_source: Read the game's Python source code to understand ALL mechanics
-- run_python: Execute Python code to extract level data, compute paths, etc.
-- get_frame_region: Inspect a specific region of the current frame in detail
-- get_action_history: Review your recent actions and their outcomes
-- submit_actions: Queue a sequence of actions to execute (use after computing a plan)
+STEP 1: Call read_game_source to get the game's Python source code.
 
-STRATEGY:
-1. On the FIRST step of a new game, ALWAYS call read_game_source first
-2. Then call run_python to extract the current level's layout: walls, doors, changers, pickups, player position, win conditions
-3. Use run_python to compute the optimal action sequence (BFS/pathfinding)
-4. Call submit_actions with the computed path
-5. After level completion, repeat steps 2-4 for the next level
+STEP 2: Call run_python with a Python script that:
+  - Reads the full source file from disk (path is in the source header)
+  - Parses sprite positions, level data, wall positions, door positions
+  - Identifies game mechanics (movement, keys, doors, changers, pickups)
+  - For the CURRENT level, computes the optimal action sequence using BFS
+  - Prints the action sequence as a JSON list, e.g.: [1,1,4,4,2,2,3]
 
-IMPORTANT: Use your tools to compute solutions. Do NOT guess moves blindly.
-When you need to output a single action directly, respond with EXACTLY:
-ACTION: <number>
+STEP 3: Call submit_actions with the computed action list.
 
-Think step by step. Analyze before acting."""
+IMPORTANT RULES:
+- The game source contains ALL information needed to solve every level
+- Player moves on a 5-pixel grid. Walls block movement. Doors block unless key matches.
+- Use BFS over state (x, y, key_shape, key_color, key_rotation) to find shortest paths
+- Health pickups refill the step counter — plan paths through them for long levels
+- Do NOT guess moves. Always compute the path first via run_python.
+- When run_python fails, fix the error and try again. Do NOT give up.
+- After computing a solution, ALWAYS call submit_actions. Do NOT output ACTION: directly when you have a computed path.
+
+If you must output a single action: ACTION: <1-4>"""
 
 
 def build_step_message(game_id: str, obs, frame_text: str, diff_text: str,
@@ -42,11 +39,10 @@ def build_step_message(game_id: str, obs, frame_text: str, diff_text: str,
 GAME: {game_id} | Level: {obs.levels_completed + 1}/{obs.win_levels} | Step: {step_count}
 State: {obs.game_state}
 
-FRAME (downsampled 16x16, color codes: K=black B=blue R=red G=green Y=yellow W=gray M=magenta O=orange C=cyan D=dark-red I=indigo L=lime T=teal P=purple S=light-gray X=white):
+FRAME (16x16 downsampled):
 {frame_text}
 
 CHANGES: {diff_text}
-
 {memory_text}
 
-What is your next action? Use tools to analyze, or respond with ACTION: <1-4>"""
+Follow the workflow: read_game_source -> run_python (extract level + solve) -> submit_actions."""

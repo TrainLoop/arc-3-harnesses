@@ -155,11 +155,71 @@ class ToolExecutor:
         if not source_path.exists():
             return f"Source not found at {source_path}"
         text = source_path.read_text()
-        # Truncate if extremely long (>30k chars)
-        if len(text) > 30000:
-            text = text[:30000] + "\n... [truncated]"
-        self._source_cache = text
-        return text
+        # Extract key sections to keep output manageable
+        # Full source is too long (2000+ lines) — provide a structured summary
+        # plus the critical game class
+        summary = self._summarize_source(text, source_path)
+        self._source_cache = summary
+        return summary
+
+    def _summarize_source(self, text: str, path) -> str:
+        """Extract the most useful parts of a game source for the LLM."""
+        lines = text.split('\n')
+        parts = [f"# Game source: {path} ({len(lines)} lines total)\n"]
+
+        # Find class definition and step function
+        class_start = None
+        for i, line in enumerate(lines):
+            if line.startswith('class ') and '(ARCBaseGame)' in line:
+                class_start = i
+                break
+
+        if class_start is not None:
+            # Include from class definition to end of file (game logic)
+            game_logic = '\n'.join(lines[class_start:])
+            parts.append("# === GAME CLASS (full logic) ===\n")
+            parts.append(game_logic)
+
+        # Find constants (colors, timing values etc)
+        for i, line in enumerate(lines):
+            if '=' in line and not line.startswith(' ') and not line.startswith('#'):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('sprites') and not stripped.startswith('levels'):
+                    if any(c.isdigit() for c in stripped):
+                        parts.insert(1, f"# CONSTANT: {stripped}")
+
+        # Include level data sections (critical for layout extraction)
+        in_levels = False
+        level_lines = []
+        for i, line in enumerate(lines):
+            if 'levels = [' in line:
+                in_levels = True
+            if in_levels:
+                level_lines.append(line)
+                if line.strip() == ']' and len(level_lines) > 2:
+                    in_levels = False
+
+        if level_lines:
+            levels_text = '\n'.join(level_lines)
+            # Truncate huge sprite position lists but keep data dicts
+            if len(levels_text) > 8000:
+                parts.append("\n# === LEVEL DEFINITIONS (truncated sprite lists, full data dicts) ===")
+                parts.append("# Use run_python with the source file path to extract full level data")
+                parts.append(f"# Source file: {path}")
+                # Just include level data dicts
+                for i, line in enumerate(level_lines):
+                    if 'data={' in line or 'Level(' in line or '# Level' in line:
+                        # Include this line and next ~15 lines (the data dict)
+                        chunk = level_lines[i:i+20]
+                        parts.append('\n'.join(chunk))
+            else:
+                parts.append("\n# === LEVEL DEFINITIONS ===\n")
+                parts.append(levels_text)
+
+        result = '\n'.join(parts)
+        if len(result) > 12000:
+            result = result[:12000] + "\n\n# ... [truncated — use run_python to read full source]"
+        return result
 
     def _run_python(self, code: str) -> str:
         try:

@@ -6,7 +6,7 @@
   "action_space": [1, 2, 3, 4],
   "mask_rows": [60, 61, 62, 63],
   "strategy_params": {
-    "model": "qwen2.5:32b",
+    "model": "gpt-oss:20b",
     "backend": "ollama",
     "base_url": "http://localhost:11434",
     "max_tool_rounds": 10,
