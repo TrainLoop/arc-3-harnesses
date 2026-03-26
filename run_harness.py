@@ -49,6 +49,8 @@ def main():
     parser.add_argument("--output", default=None, help="Path to save results JSON")
     parser.add_argument("--render", default=None, choices=["terminal", "human"],
                         help="Render mode: 'terminal' for ASCII, 'human' for matplotlib")
+    parser.add_argument("--online", action="store_true",
+                        help="Run in ONLINE mode (actions via API, enables web replay)")
     args = parser.parse_args()
 
     # Load or build config
@@ -82,9 +84,10 @@ def main():
     print()
 
     # Initialize Arcade
+    op_mode = OperationMode.ONLINE if args.online else OperationMode.NORMAL
     arc = Arcade(
         arc_api_key=api_key,
-        operation_mode=OperationMode.NORMAL,
+        operation_mode=op_mode,
     )
 
     # Create environment
@@ -123,10 +126,20 @@ def main():
         Path(args.output).write_text(result.to_json())
         print(f"\nResults saved to {args.output}")
 
-    # Close scorecard
+    # Close scorecard and print viewer URLs
+    scorecard_id = None
+    if hasattr(arc, '_default_scorecard_id'):
+        scorecard_id = arc._default_scorecard_id
     scorecard = arc.close_scorecard()
     if scorecard:
         print(f"Score: {scorecard.score}")
+        sid = scorecard_id or getattr(scorecard, 'id', None) or getattr(scorecard, 'scorecard_id', None)
+        if sid:
+            print(f"\nScorecard: https://arcprize.org/scorecards/{sid}")
+
+    # Print replay URL if we have the game session GUID
+    if hasattr(env, '_guid') and env._guid:
+        print(f"Replay:    https://arcprize.org/replay/{env._guid}")
 
 
 if __name__ == "__main__":
