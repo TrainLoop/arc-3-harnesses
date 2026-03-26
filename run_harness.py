@@ -47,6 +47,8 @@ def main():
     parser.add_argument("--max-actions", type=int, default=None)
     parser.add_argument("--api-key", default=None, help="ARC API key")
     parser.add_argument("--output", default=None, help="Path to save results JSON")
+    parser.add_argument("--render", default=None, choices=["terminal", "human"],
+                        help="Render mode: 'terminal' for ASCII, 'human' for matplotlib")
     args = parser.parse_args()
 
     # Load or build config
@@ -87,7 +89,7 @@ def main():
 
     # Create environment
     print(f"Creating environment for {config.game_id}...")
-    env = arc.make(config.game_id, save_recording=True)
+    env = arc.make(config.game_id, save_recording=True, render_mode=args.render)
     if env is None:
         print("ERROR: Failed to create environment")
         sys.exit(1)
