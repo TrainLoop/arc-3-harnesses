@@ -9,7 +9,7 @@ from ..perception import GameObservation
 class RandomStrategy(Strategy):
     name = "random"
 
-    def __init__(self, action_space: list[int] = None):
+    def __init__(self, action_space: list[int] = None, **kwargs):
         self.action_space = action_space or [1, 2, 3, 4]
 
     def reset(self):

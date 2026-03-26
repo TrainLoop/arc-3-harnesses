@@ -2,7 +2,8 @@
 Runner: connects a harness to the ARC-AGI-3 environment and executes it.
 
 Usage:
-    python run_harness.py --game ls20 [--strategy graph_explorer] [--config harnesses/configs/ls20.json]
+    python run_harness.py --game ls20 --strategy llm_agent
+    python run_harness.py --game ls20 --strategy llm_agent --online
     python run_harness.py --game ls20 --strategy random
 """
 
@@ -17,13 +18,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from arc_agi import Arcade, OperationMode
 from harnesses.base import Harness, HarnessConfig
-from harnesses.strategies import GraphExplorerStrategy, RandomStrategy, SourceSolverStrategy
+from harnesses.strategies import RandomStrategy, LLMAgentStrategy
 
 
 STRATEGY_REGISTRY = {
-    "graph_explorer": GraphExplorerStrategy,
+    "llm_agent": LLMAgentStrategy,
     "random": RandomStrategy,
-    "source_solver": SourceSolverStrategy,
 }
 
 
@@ -35,6 +35,7 @@ def build_strategy(config: HarnessConfig):
                          f"Available: {list(STRATEGY_REGISTRY.keys())}")
     return cls(
         action_space=config.action_space,
+        game_id=config.game_id,
         **config.strategy_params,
     )
 
