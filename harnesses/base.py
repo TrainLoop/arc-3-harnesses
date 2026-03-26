@@ -30,6 +30,7 @@ class HarnessConfig:
     action_space: list = field(default_factory=lambda: [1, 2, 3, 4])
     mask_rows: list = field(default_factory=list)  # rows to mask from state hash
     strategy_params: dict = field(default_factory=dict)
+    step_delay: float = 0.0  # seconds between API calls (for rate limiting)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -167,7 +168,18 @@ class Harness:
             action = self.strategy.choose_action(obs)
 
             state_before = obs.state_hash
-            obs_raw = env.step(action)
+            # Step with rate limiting and retry on transient errors
+            for _attempt in range(3):
+                if self.config.step_delay > 0:
+                    time.sleep(self.config.step_delay)
+                try:
+                    obs_raw = env.step(action)
+                    break
+                except Exception as e:
+                    if _attempt < 2:
+                        time.sleep(2 ** _attempt)  # exponential backoff: 1s, 2s
+                        continue
+                    raise
             if obs_raw is None:
                 break
 
@@ -233,7 +245,17 @@ class Harness:
                         break
                     path = level_paths[lvl]
                     for aid in path:
-                        obs_raw = env.step(_ACTION_BY_ID[aid])
+                        for _attempt in range(3):
+                            if self.config.step_delay > 0:
+                                time.sleep(self.config.step_delay)
+                            try:
+                                obs_raw = env.step(_ACTION_BY_ID[aid])
+                                break
+                            except Exception:
+                                if _attempt < 2:
+                                    time.sleep(2 ** _attempt)
+                                    continue
+                                raise
                         if obs_raw is None:
                             break
                         obs = GameObservation.from_raw(obs_raw, prev_frame, mask_rows=mask_rows)
@@ -241,7 +263,7 @@ class Harness:
                         prev_frame = obs.frame
 
                         if obs.game_state == "GAME_OVER":
-                            break  # Replay path failed (shouldn't happen)
+                            break  # Replay path failed
                     if obs_raw is None or obs.game_state == "GAME_OVER":
                         break
 

@@ -73,6 +73,8 @@ def main():
     if args.max_actions:
         config.max_actions = args.max_actions
     config.game_id = args.game
+    if args.online:
+        config.step_delay = 0.15  # 150ms between API calls to avoid rate limits
 
     # API key
     api_key = args.api_key or os.environ.get("ARC_API_KEY", "")
@@ -98,6 +100,14 @@ def main():
         sys.exit(1)
 
     print(f"Environment ready. Win levels: {env.info.title}")
+
+    # Print viewer URLs early so user can open them while the run is in progress
+    scorecard_id = getattr(arc, '_default_scorecard_id', None)
+    guid = getattr(env, '_guid', None)
+    if scorecard_id:
+        print(f"\nScorecard: https://arcprize.org/scorecards/{scorecard_id}")
+    if guid:
+        print(f"Replay:    https://arcprize.org/replay/{guid}")
     print()
 
     # Build and run harness
@@ -126,20 +136,16 @@ def main():
         Path(args.output).write_text(result.to_json())
         print(f"\nResults saved to {args.output}")
 
-    # Close scorecard and print viewer URLs
-    scorecard_id = None
-    if hasattr(arc, '_default_scorecard_id'):
-        scorecard_id = arc._default_scorecard_id
+    # Close scorecard
     scorecard = arc.close_scorecard()
     if scorecard:
         print(f"Score: {scorecard.score}")
-        sid = scorecard_id or getattr(scorecard, 'id', None) or getattr(scorecard, 'scorecard_id', None)
-        if sid:
-            print(f"\nScorecard: https://arcprize.org/scorecards/{sid}")
 
-    # Print replay URL if we have the game session GUID
-    if hasattr(env, '_guid') and env._guid:
-        print(f"Replay:    https://arcprize.org/replay/{env._guid}")
+    # Reprint URLs at the end for convenience
+    if scorecard_id:
+        print(f"\nScorecard: https://arcprize.org/scorecards/{scorecard_id}")
+    if guid:
+        print(f"Replay:    https://arcprize.org/replay/{guid}")
 
 
 if __name__ == "__main__":
