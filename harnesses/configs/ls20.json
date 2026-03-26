@@ -1,0 +1,12 @@
+{
+  "game_id": "ls20",
+  "strategy_name": "graph_explorer",
+  "max_actions": 100000,
+  "max_actions_per_level": 20000,
+  "action_space": [1, 2, 3, 4],
+  "mask_rows": [60, 61, 62, 63],
+  "strategy_params": {
+    "explore_depth": 200,
+    "prefer_productive": true
+  }
+}

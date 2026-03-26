@@ -117,3 +117,7 @@ cython_debug/
 
 # macOS metadata
 .DS_Store
+
+# ARC-AGI runtime artifacts
+environment_files/
+recordings/
