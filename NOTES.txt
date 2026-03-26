@@ -1,0 +1,177 @@
+ARC-AGI-3 Harness Project
+=========================
+Created: 2026-03-26
+
+
+WHAT IS ARC-AGI-3
+-----------------
+ARC-AGI-3 is NOT static JSON puzzles like ARC-AGI-1/2. It is an interactive
+game benchmark where agents take actions (up/down/left/right/click) in
+turn-based environments and receive 64x64 pixel grid observations back.
+
+Each game has multiple levels of increasing difficulty. The agent's goal is
+to complete all levels using as few actions as possible. Games are defined
+as Python classes using the `arcengine` library and accessed via the ARC API
+at https://three.arcprize.org.
+
+There are currently 25 public games. Each has:
+  - metadata.json (game_id, title, tags, baseline_actions per level)
+  - source.py (full game logic — sprites, levels, step function)
+
+
+WHAT WE BUILT
+-------------
+
+1. Dataset Downloader (download_games.py)
+   - Fetches all 25 games from the ARC API (works with anonymous key)
+   - Stores metadata.json + source.py per game in dataset/games/{game_id}/
+   - Creates dataset/index.json as a master index
+   - Re-run anytime to refresh; set ARC_API_KEY env var for more games
+
+2. Modular Harness Framework (harnesses/)
+   Designed so a model can learn to produce harness configs for new games.
+
+   harnesses/
+     base.py           — Core abstractions:
+                          HarnessConfig: JSON-serializable game config
+                          Strategy: abstract action-selection interface
+                          Harness: game loop connecting strategy to env
+     perception.py     — Frame processing:
+                          Frame: immutable 64x64 grid snapshot
+                          Frame.hash: content hash with row masking
+                          FrameDiff: pixel-level change detection
+                          GameObservation: structured obs from raw API data
+     strategies/
+       graph_explorer.py — Main solver (see below)
+       random_strategy.py — Random baseline for comparison
+     configs/
+       ls20.json        — Tuned config for the ls20 game
+
+3. Runner (run_harness.py)
+   CLI that connects a harness to the live ARC-AGI-3 environment.
+   Usage: python run_harness.py --game ls20 [--strategy graph_explorer]
+
+
+HOW THE GRAPH EXPLORER WORKS
+-----------------------------
+The core strategy is a state-graph BFS explorer. It treats the game as a
+directed graph where nodes are unique visual states and edges are actions.
+
+State Hashing:
+  Each 64x64 frame is hashed (MD5) to produce a state identifier. Rows
+  60-63 are masked because they contain the step counter UI which changes
+  every move but isn't part of the game state. The key/rotation indicator
+  in rows 55-59 IS included since it reflects actual game state.
+
+Exploration Loop (per step):
+  1. If navigating to a frontier state, follow the planned path
+  2. If current state has untested actions, try one (randomized order)
+  3. If all actions tested here, BFS to the deepest frontier state
+  4. If fully explored, random walk biased toward least-visited states
+
+Death Handling:
+  ls20 has a step counter (21 moves/life, 3 lives). When all lives are
+  lost, the game resets to level 1. The harness handles this with:
+  - soft_reset(): clears navigation path but KEEPS the graph
+  - Level path caching: after solving a level, extracts the shortest
+    BFS path from the graph and caches it
+  - On game-over: replays cached paths to skip solved levels instantly
+
+Results on ls20:
+  Level 1: solved in ~14 actions (optimal BFS path), baseline is 21
+  Level 2+: graph saturates at ~280 states but can't solve within
+  the step budget. Needs health-pickup-aware planning (see below).
+
+
+LS20 GAME MECHANICS (from source analysis)
+-------------------------------------------
+- Keyboard game: 4 actions (up/down/left/right), 5x5 pixel cell movement
+- Player carries a key with shape, color, and rotation
+- Doors can only be opened when key matches (shape + color + rotation)
+- Special tiles on the grid:
+    ttfwljgohq — shape changer (cycles through 6 key shapes)
+    soyhouuebz — color changer (cycles through 4 colors)
+    rhsxkxzdjz — rotation changer (cycles 0/90/180/270)
+    npxgalaybz — health pickup (refills step counter to full)
+    ihdgageizm — walls (block movement)
+- Step counter: 42 total, decrements by 2 per move = 21 moves/life
+  (some levels override to decrement=1 for 42 moves/life)
+- 3 lives per game-over. Losing a life resets position + key state.
+- 7 levels, baseline actions: [21, 123, 39, 92, 54, 108, 109]
+- Health pickups are critical for deeper levels — they refill the step
+  counter, allowing the agent to explore further per life
+
+
+WHY LEVEL 2+ IS HARD FOR BLIND EXPLORATION
+-------------------------------------------
+Level 2 has baseline 123 actions but only 21 moves per life. Even with
+3 lives (63 moves), you need health pickups to extend. The game has 2
+pickups in level 2 at positions (15,16) and (40,51) which refill steps.
+
+The graph explorer discovers ~280 unique states but can't plan a path
+that: navigates to pickups -> visits rotation changer 3x -> reaches door.
+This requires multi-life planning with pickup awareness.
+
+Approaches that would solve deeper levels:
+  1. Health-pickup-aware BFS: detect lime-colored (color 11) 3x3 sprites
+     in the frame, plan paths through them first
+  2. CNN-based RL (like StochasticGoose, 1st place): train a small CNN
+     to predict which actions cause frame changes, bias exploration
+  3. Local LLM reasoning: use ollama/vllm to analyze frames and plan
+  4. Source-code analysis: parse level data to extract optimal paths
+     (works but isn't generalizable to unseen games)
+
+Each of these can be added as a new Strategy subclass.
+
+
+TOP EXISTING APPROACHES (for reference)
+----------------------------------------
+1. StochasticGoose (1st place, 12.58%): Pure RL. CNN with 16-channel
+   one-hot input (64x64), dual heads for action classification + spatial
+   click prediction. Supervised on "did frame change?" labels. Experience
+   buffer with hash dedup. Model resets between levels.
+   Code: github.com/DriesSmit/ARC3-solution
+
+2. Symbolica Arcgentica: LLM multi-agent system. Orchestrator spawns
+   explorer/theorist/tester/solver subagents. Shared memory DB with
+   LLM-powered retrieval. No game-specific prompting.
+   Code: github.com/symbolica-ai/ARC-AGI-3-Agents
+
+3. Graph Explorer (3rd place, 3.64%): Training-free graph search with
+   hierarchical action priority. Segments frames into color components,
+   tests high-salience segments first.
+   Paper: arxiv.org/abs/2512.24156
+
+
+MODULARITY FOR MODEL TRAINING
+------------------------------
+The harness is designed so a model can learn to synthesize configs:
+
+Input to model:  game metadata + source code (or observations)
+Output of model: HarnessConfig JSON
+
+A HarnessConfig fully specifies:
+  - game_id: which game
+  - strategy_name: which strategy class to use
+  - action_space: [1,2,3,4] for keyboard, [1,2,3,4,5,6] for click games
+  - mask_rows: which frame rows to exclude from state hashing
+  - max_actions: total action budget
+  - max_actions_per_level: per-level budget before forced reset
+  - strategy_params: strategy-specific tuning (explore_depth, etc.)
+
+The Strategy interface is:
+  reset()                    — new level
+  soft_reset()               — death/game-over (keep learned state)
+  choose_action(obs) -> act  — pick next action
+  on_step_result(act, obs)   — learn from outcome
+  serialize() -> dict        — export state for training data
+
+
+DEPENDENCIES
+------------
+Python 3.12+
+pip install arc-agi    (installs arcengine, flask, numpy, etc.)
+
+To run:
+  source .venv/bin/activate
+  ARC_API_KEY=your-key python run_harness.py --game ls20
