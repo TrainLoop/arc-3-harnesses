@@ -169,13 +169,21 @@ class Harness:
 
             action = self.strategy.choose_action(obs)
 
+            # Get reasoning and click data from strategy (if available)
+            reasoning = None
+            step_data = None
+            if hasattr(self.strategy, 'get_reasoning'):
+                reasoning = self.strategy.get_reasoning()
+            if hasattr(self.strategy, 'get_click_data'):
+                step_data = self.strategy.get_click_data()
+
             state_before = obs.state_hash
             # Step with rate limiting and retry on transient errors
             for _attempt in range(3):
                 if self.config.step_delay > 0:
                     time.sleep(self.config.step_delay)
                 try:
-                    obs_raw = env.step(action)
+                    obs_raw = env.step(action, data=step_data, reasoning=reasoning)
                     break
                 except Exception as e:
                     if _attempt < 2:

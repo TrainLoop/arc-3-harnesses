@@ -120,6 +120,28 @@ class LLMAgentStrategy(Strategy):
             return {"x": click[0], "y": click[1]}
         return None
 
+    def get_reasoning(self) -> Optional[dict]:
+        """Get reasoning for the last chosen action (sent to API for logging)."""
+        reasoning = {
+            "step": self._step_count,
+            "level": self._current_level + 1,
+            "level_step": self._level_step_count,
+        }
+        # Include last LLM text if available
+        for msg in reversed(self._conversation):
+            if msg.get("role") == "assistant" and msg.get("content"):
+                text = msg["content"]
+                if isinstance(text, str) and text.strip():
+                    reasoning["thought"] = text[:500]
+                    break
+        # Include tool call info
+        for msg in reversed(self._conversation):
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                calls = msg["tool_calls"]
+                reasoning["tools_used"] = [tc["function"]["name"] for tc in calls[:3]]
+                break
+        return reasoning
+
     def on_step_result(self, action: GameAction, obs: GameObservation):
         frame_changed = (obs.diff_from_prev is not None and obs.diff_from_prev.changed)
         self.tools.update(obs, action.value, frame_changed)
