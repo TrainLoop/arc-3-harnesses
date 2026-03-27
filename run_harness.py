@@ -47,17 +47,14 @@ def get_game_ids(dataset_dir: Path) -> list[str]:
                    if d.is_dir() and (d / "source.py").exists()])
 
 
-def run_single_game(config: HarnessConfig, api_key: str, online: bool,
+def run_single_game(config: HarnessConfig, arc: "Arcade",
                     render_mode: str = None) -> dict:
-    """Run a single game. Returns result summary."""
+    """Run a single game using a shared Arcade instance. Returns result summary."""
     print(f"\n{'#'*60}")
     print(f"GAME: {config.game_id}")
     print(f"Strategy: {config.strategy_name}")
     print(f"Action space: {config.action_space}")
     print(f"{'#'*60}")
-
-    op_mode = OperationMode.ONLINE if online else OperationMode.NORMAL
-    arc = Arcade(arc_api_key=api_key, operation_mode=op_mode)
 
     try:
         env = arc.make(config.game_id, save_recording=True, render_mode=render_mode)
@@ -76,11 +73,9 @@ def run_single_game(config: HarnessConfig, api_key: str, online: bool,
             config.action_space = list(avail)
             print(f"  Actions from env: {config.action_space}")
 
-    # Print URLs
-    scorecard_id = getattr(arc, '_default_scorecard_id', None)
     guid = getattr(env, '_guid', None)
-    if scorecard_id:
-        print(f"  Scorecard: https://arcprize.org/scorecards/{scorecard_id}")
+    if guid:
+        print(f"  GUID: {guid}")
 
     strategy = build_strategy(config)
     harness = Harness(config, strategy)
@@ -94,14 +89,6 @@ def run_single_game(config: HarnessConfig, api_key: str, online: bool,
           f"| {result.levels_completed}/{result.win_levels} levels "
           f"| {result.total_actions} actions "
           f"| {result.duration_seconds:.1f}s")
-
-    # Close scorecard
-    try:
-        scorecard = arc.close_scorecard()
-        if scorecard:
-            print(f"  Score: {scorecard.score}")
-    except Exception:
-        pass
 
     return {
         "game_id": config.game_id,
@@ -150,9 +137,17 @@ def main():
     print(f"Online: {args.online}")
     print()
 
+    # Create ONE Arcade instance (and one scorecard) for ALL games
+    op_mode = OperationMode.ONLINE if args.online else OperationMode.NORMAL
+    arc = Arcade(arc_api_key=api_key, operation_mode=op_mode)
+
+    scorecard_id = getattr(arc, '_default_scorecard_id', None)
+    if scorecard_id:
+        print(f"Scorecard: https://arcprize.org/scorecards/{scorecard_id}")
+    print()
+
     all_results = []
     for game_id in game_ids:
-        # Load metadata to get full game_id and action space
         meta_path = dataset_dir / "games" / game_id / "metadata.json"
         game_full_id = game_id
         default_actions = [1, 2, 3, 4]
@@ -166,25 +161,37 @@ def main():
             max_actions=args.max_actions,
             max_actions_per_level=args.max_actions_per_level,
             action_space=default_actions,
-            mask_rows=list(range(60, 64)),  # mask status bar rows
+            mask_rows=list(range(60, 64)),
             strategy_params={
                 "model": args.model,
                 "backend": args.backend,
                 "dataset_dir": str(dataset_dir),
-                "game_id": game_id,  # short id for source lookup
+                "game_id": game_id,
             },
         )
 
         if args.online:
             config.step_delay = 0.1
 
-        result = run_single_game(config, api_key, args.online, args.render)
+        result = run_single_game(config, arc, args.render)
         all_results.append(result)
+
+    # Close the single scorecard
+    print(f"\n{'='*60}")
+    print("Closing scorecard...")
+    try:
+        scorecard = arc.close_scorecard()
+        if scorecard:
+            print(f"Score: {scorecard.score}")
+    except Exception as e:
+        print(f"Error closing scorecard: {e}")
 
     # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")
     print(f"{'='*60}")
+    if scorecard_id:
+        print(f"Scorecard: {scorecard_id}")
     total_levels = sum(r.get("levels_completed", 0) for r in all_results)
     total_win = sum(r.get("win_levels", 0) for r in all_results)
     for r in all_results:
