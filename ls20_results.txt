@@ -1,0 +1,15 @@
+ARC-AGI-3 LLM Harness Results (Remote API)
+============================================================
+Game: ls20-9607627b
+Date: 2026-03-26T20:03:09.023139
+Scorecard: de4517f5-fa7c-47d8-8377-0d25c7f7a97a
+GUID: 80848e2d-24b1-472c-842b-1ddd47393c1b
+
+Levels solved: 4 / 7
+Total actions: 208
+
+  Level 1: SOLVED | 13 actions
+  Level 2: SOLVED | 45 actions
+  Level 3: SOLVED | 39 actions
+  Level 4: SOLVED | 49 actions
+  Level 5: FAILED | 62 actions
