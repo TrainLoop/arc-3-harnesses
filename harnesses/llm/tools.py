@@ -4,6 +4,7 @@ The LLM can call these tools to analyze the game before deciding actions.
 Supports all action types: directional (1-5), click (6 with x,y), undo (7).
 """
 
+import os
 import subprocess
 import sys
 import json
@@ -27,7 +28,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "run_python",
-            "description": "Run a Python script to analyze game source or compute solutions. Has access to arcengine, numpy, json, math, collections. The game source file path is shown in the read_game_source output. Print results to stdout.",
+            "description": "Run a Python script. The env var SOURCE_PATH contains the game source file path. Example: source = open(os.environ['SOURCE_PATH']).read(). Has arcengine, numpy, json, math. Print results to stdout. 30s timeout.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -268,8 +269,9 @@ print(json.dumps(info, indent=2, default=str))
         Provides pre-parsed structure so the model doesn't have to regex raw source."""
         import re as _re
         lines = text.split('\n')
-        parts = [f"# Game source: {path} ({len(lines)} lines total)"]
-        parts.append(f"# To read full source in run_python: open('{path}').read()")
+        parts = [f"SOURCE_PATH = \"{path}\""]
+        parts.append(f"To read full source in run_python: source = open(\"{path}\").read()")
+        parts.append(f"Total lines: {len(lines)}")
 
         # Extract class name
         class_name = None
@@ -333,11 +335,20 @@ print(json.dumps(info, indent=2, default=str))
     def _run_python(self, code: str) -> str:
         # Use the venv python so arcengine and numpy are available
         python = str(Path(sys.executable))
+        # Inject SOURCE_PATH so scripts can find the game source
+        env = dict(os.environ)
+        source_path = self.dataset_dir / "games" / self.game_id / "source.py"
+        if not source_path.exists():
+            short_id = self.game_id.split("-")[0]
+            source_path = self.dataset_dir / "games" / short_id / "source.py"
+        env["SOURCE_PATH"] = str(source_path)
+        env["GAME_ID"] = self.game_id
         try:
             result = subprocess.run(
                 [python, "-c", code],
                 capture_output=True, text=True, timeout=30,
                 cwd=str(self.dataset_dir.parent),
+                env=env,
             )
             output = result.stdout
             if result.returncode != 0:

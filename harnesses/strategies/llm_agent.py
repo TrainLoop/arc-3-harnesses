@@ -42,7 +42,7 @@ class LLMAgentStrategy(Strategy):
         model: str = "gpt-5.2",
         backend: str = "openai",
         base_url: str = "http://localhost:11434",
-        max_tool_rounds: int = 15,
+        max_tool_rounds: int = 25,
         temperature: float = 0.2,
         game_id: str = "ls20",
         dataset_dir: str = "dataset",
@@ -221,9 +221,15 @@ class LLMAgentStrategy(Strategy):
             self._conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._conversation.append({"role": "user", "content": user_msg})
 
-        # Keep conversation manageable
+        # Keep conversation manageable — but preserve tool call/result pairs
         if len(self._conversation) > 20:
-            self._conversation = [self._conversation[0]] + self._conversation[-12:]
+            # Keep system + last N messages, ensuring no orphaned tool results
+            keep = [self._conversation[0]]  # system
+            tail = self._conversation[-12:]
+            # If tail starts with a tool result, drop it (orphaned)
+            while tail and tail[0].get("role") == "tool":
+                tail = tail[1:]
+            self._conversation = keep + tail
 
         for _round in range(self.max_tool_rounds):
             print(f"    [llm] round {_round + 1}...", end="", flush=True)
