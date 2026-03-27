@@ -121,26 +121,47 @@ class LLMAgentStrategy(Strategy):
         return None
 
     def get_reasoning(self) -> Optional[dict]:
-        """Get reasoning for the last chosen action (sent to API for logging)."""
-        reasoning = {
-            "step": self._step_count,
-            "level": self._current_level + 1,
-            "level_step": self._level_step_count,
-        }
-        # Include last LLM text if available
-        for msg in reversed(self._conversation):
-            if msg.get("role") == "assistant" and msg.get("content"):
-                text = msg["content"]
-                if isinstance(text, str) and text.strip():
-                    reasoning["thought"] = text[:500]
-                    break
-        # Include tool call info
-        for msg in reversed(self._conversation):
-            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                calls = msg["tool_calls"]
-                reasoning["tools_used"] = [tc["function"]["name"] for tc in calls[:3]]
+        """Get reasoning for the last chosen action (sent to API for logging).
+        Includes the full LLM thought chain: tool calls, results, and thoughts."""
+        parts = []
+        # Walk conversation from the last user message to capture the full reasoning chain
+        start_idx = 0
+        for i in range(len(self._conversation) - 1, -1, -1):
+            if self._conversation[i].get("role") == "user":
+                start_idx = i + 1
                 break
-        return reasoning
+
+        for msg in self._conversation[start_idx:]:
+            role = msg.get("role", "")
+            if role == "assistant":
+                text = msg.get("content", "")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+                if msg.get("tool_calls"):
+                    for tc in msg["tool_calls"]:
+                        fn = tc.get("function", tc)
+                        name = fn.get("name", "?")
+                        args = fn.get("arguments", {})
+                        if name == "run_python":
+                            code = args.get("code", "")
+                            parts.append(f"[tool: run_python]\n```\n{code[:300]}\n```")
+                        elif name == "read_game_source":
+                            parts.append("[tool: read_game_source]")
+                        elif name == "submit_actions":
+                            actions = args.get("actions", [])
+                            reason = args.get("reasoning", "")
+                            parts.append(f"[tool: submit_actions] {len(actions)} actions. {reason}")
+                        else:
+                            parts.append(f"[tool: {name}]")
+            elif role == "tool":
+                result = msg.get("content", "")[:200]
+                parts.append(f"-> {result}")
+
+        full_text = "\n".join(parts)
+        # Cap at ~2KB to stay under 16KB reasoning limit
+        if len(full_text) > 2000:
+            full_text = full_text[:2000] + "\n..."
+        return full_text if full_text else None
 
     def on_step_result(self, action: GameAction, obs: GameObservation):
         frame_changed = (obs.diff_from_prev is not None and obs.diff_from_prev.changed)
