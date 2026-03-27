@@ -181,8 +181,10 @@ class ToolExecutor:
 
         # Pre-extract structured game info by actually loading the game
         struct_info = self._extract_game_info(source_path)
+        # For large sources, only include the game class (not sprites/levels raw text)
         summary = self._summarize_source(text, source_path)
         if struct_info:
+            # Structured info is much more useful than raw source — put it first
             result = struct_info + "\n\n" + summary
         else:
             result = summary

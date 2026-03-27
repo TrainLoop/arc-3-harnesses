@@ -109,8 +109,8 @@ def main():
     parser.add_argument("--max-actions", type=int, default=1000)
     parser.add_argument("--max-actions-per-level", type=int, default=500)
     parser.add_argument("--api-key", default=None, help="ARC API key")
-    parser.add_argument("--model", default="gpt-oss:20b", help="LLM model")
-    parser.add_argument("--backend", default="ollama", help="LLM backend")
+    parser.add_argument("--model", default="gpt-5.2", help="LLM model")
+    parser.add_argument("--backend", default="openai", help="LLM backend")
     parser.add_argument("--output", default=None, help="Results JSON path")
     parser.add_argument("--render", default=None, choices=["terminal", "human"])
     parser.add_argument("--online", action="store_true",

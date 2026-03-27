@@ -39,8 +39,8 @@ class LLMAgentStrategy(Strategy):
     def __init__(
         self,
         action_space: list[int] = None,
-        model: str = "gpt-oss:20b",
-        backend: str = "ollama",
+        model: str = "gpt-5.2",
+        backend: str = "openai",
         base_url: str = "http://localhost:11434",
         max_tool_rounds: int = 15,
         temperature: float = 0.2,
@@ -166,6 +166,24 @@ class LLMAgentStrategy(Strategy):
     def on_step_result(self, action: GameAction, obs: GameObservation):
         frame_changed = (obs.diff_from_prev is not None and obs.diff_from_prev.changed)
         self.tools.update(obs, action.value, frame_changed)
+
+        # Loop detection: if the last N actions were identical and didn't change frame, clear the queue
+        if not frame_changed:
+            self._no_change_count = getattr(self, '_no_change_count', 0) + 1
+        else:
+            self._no_change_count = 0
+
+        if self._no_change_count >= 5:
+            # Stuck — clear cached solution and force re-reasoning
+            self.tools._pending_actions = []
+            self.tools._pending_clicks = []
+            if self._current_level in self._level_solutions:
+                del self._level_solutions[self._current_level]
+            if self._current_level in self._level_clicks:
+                del self._level_clicks[self._current_level]
+            self._conversation = []  # reset conversation to avoid repeating
+            self._no_change_count = 0
+            print(f"    [loop-detect] cleared stale solution, will re-reason")
 
     def get_level_solution(self, level_index: int) -> Optional[list[int]]:
         return list(self._level_solutions.get(level_index, []))

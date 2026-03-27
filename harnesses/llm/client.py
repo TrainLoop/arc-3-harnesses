@@ -70,7 +70,7 @@ class OpenAICompatClient(LLMClient):
     """OpenAI-compatible /v1/chat/completions (works with vllm, lmstudio, etc.)."""
 
     def __init__(self, model: str, base_url: str = "http://localhost:8000",
-                 api_key: str = "none"):
+                 api_key: str = "none", **kwargs):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -106,6 +106,59 @@ class OpenAICompatClient(LLMClient):
             tool_calls.append(ToolCall(name=fn.get("name", ""), arguments=args))
 
         return LLMResponse(text=text, tool_calls=tool_calls, raw=data)
+
+
+class OpenAIClient(LLMClient):
+    """Official OpenAI API client (gpt-4o, gpt-5.2, etc.)."""
+
+    def __init__(self, model: str = "gpt-5.2", api_key: str | None = None, **kwargs):
+        from openai import OpenAI
+        self.model = model
+        self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+
+    def chat(self, messages, tools=None, temperature=0.2, max_tokens=16000):
+        # Clean messages: strip non-standard fields
+        clean_msgs = []
+        for m in messages:
+            cm = {"role": m["role"], "content": m["content"]}
+            if m.get("tool_calls"):
+                cm["tool_calls"] = []
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", tc)
+                    cm["tool_calls"].append({
+                        "id": fn.get("name", "call"),
+                        "type": "function",
+                        "function": {"name": fn["name"], "arguments": json.dumps(fn.get("arguments", {}))},
+                    })
+            if m.get("role") == "tool":
+                cm["tool_call_id"] = m.get("tool_use_id", m.get("name", "call"))
+            clean_msgs.append(cm)
+
+        kwargs = {
+            "model": self.model,
+            "messages": clean_msgs,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        response = self.client.chat.completions.create(**kwargs)
+        msg = response.choices[0].message
+
+        text = msg.content or ""
+        tool_calls = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                tool_calls.append(ToolCall(name=tc.function.name, arguments=args))
+
+        return LLMResponse(text=text, tool_calls=tool_calls, raw={})
 
 
 class AnthropicClient(LLMClient):
@@ -217,8 +270,10 @@ def create_client(backend: str = "ollama", model: str = "qwen2.5:32b",
                   base_url: str = "http://localhost:11434", **kwargs) -> LLMClient:
     if backend == "ollama":
         return OllamaClient(model=model, base_url=base_url)
-    elif backend in ("openai", "vllm", "lmstudio"):
+    elif backend in ("openai_compat", "vllm", "lmstudio"):
         return OpenAICompatClient(model=model, base_url=base_url, **kwargs)
+    elif backend == "openai":
+        return OpenAIClient(model=model, **kwargs)
     elif backend == "anthropic":
         return AnthropicClient(model=model, **kwargs)
     else:
