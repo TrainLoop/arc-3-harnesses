@@ -81,12 +81,13 @@ class ArcAPIClient:
         return resp.json()
 
     def action(self, game_id: str, guid: str, action: GameAction,
-               reasoning: Optional[str] = None) -> dict:
+               reasoning=None) -> dict:
         """Send an action, returns frame data."""
         action_name = f"ACTION{action.value}"
         payload = {"game_id": game_id, "guid": guid}
-        if reasoning:
-            payload["reasoning"] = reasoning
+        if reasoning is not None:
+            # Send as JSON string per remote_wrapper convention
+            payload["reasoning"] = json.dumps(reasoning) if not isinstance(reasoning, str) else reasoning
         resp = self.session.post(
             f"{self.base_url}/api/cmd/{action_name}",
             json=payload,
@@ -351,12 +352,12 @@ def main():
                 continue
 
             # Get reasoning for this action
-            reasoning = logger.get_reasoning(i)
-
+            reasoning_data = logger.get_reasoning(i)
+            # Send as raw dict - the API accepts any JSON-serializable value
             try:
                 frame = client.action(
                     game_full_id, guid, ga,
-                    reasoning=json.dumps(reasoning),
+                    reasoning=reasoning_data,
                 )
             except Exception as e:
                 print(f"  API error at action {i}: {e}")
