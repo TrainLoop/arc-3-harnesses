@@ -39,8 +39,8 @@ class LLMAgentStrategy(Strategy):
     def __init__(
         self,
         action_space: list[int] = None,
-        model: str = "claude-sonnet-4-20250514",
-        backend: str = "anthropic",
+        model: str = "gpt-oss:20b",
+        backend: str = "ollama",
         base_url: str = "http://localhost:11434",
         max_tool_rounds: int = 15,
         temperature: float = 0.2,

@@ -173,68 +173,159 @@ class ToolExecutor:
         # Try short game id first, then with version
         source_path = self.dataset_dir / "games" / self.game_id / "source.py"
         if not source_path.exists():
-            # Try without version suffix (e.g., ls20 instead of ls20-9607627b)
             short_id = self.game_id.split("-")[0] if "-" in self.game_id else self.game_id
             source_path = self.dataset_dir / "games" / short_id / "source.py"
         if not source_path.exists():
             return f"Source not found for {self.game_id}"
         text = source_path.read_text()
+
+        # Pre-extract structured game info by actually loading the game
+        struct_info = self._extract_game_info(source_path)
         summary = self._summarize_source(text, source_path)
-        self._source_cache = summary
-        return summary
+        if struct_info:
+            result = struct_info + "\n\n" + summary
+        else:
+            result = summary
+        self._source_cache = result
+        return result
+
+    def _extract_game_info(self, source_path: Path) -> str:
+        """Load the game and extract structured info for the LLM."""
+        python = str(Path(sys.executable))
+        code = f'''
+import json, sys, importlib.util
+spec = importlib.util.spec_from_file_location("gm", "{source_path}")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+from arcengine import ARCBaseGame, GameAction, ActionInput
+game = None
+for name in dir(mod):
+    obj = getattr(mod, name)
+    if isinstance(obj, type) and issubclass(obj, ARCBaseGame) and obj is not ARCBaseGame:
+        game = obj()
+        break
+if not game:
+    print("ERROR: no game class found")
+    sys.exit(1)
+game.perform_action(ActionInput(id=GameAction.RESET))
+info = {{}}
+info["class_name"] = type(game).__name__
+info["num_levels"] = len(game._levels)
+info["available_actions"] = game._available_actions if hasattr(game, "_available_actions") else []
+info["grid_size"] = list(game.current_level.grid_size) if game.current_level.grid_size else [64,64]
+# Extract per-level data dicts
+info["levels"] = []
+for i, lvl in enumerate(game._clean_levels):
+    d = {{}}
+    d["index"] = i
+    if hasattr(lvl, "_data") and lvl._data:
+        d["data"] = dict(lvl._data)
+    elif hasattr(lvl, "data") and callable(getattr(lvl, "get_data", None)):
+        pass  # data access requires level to be set
+    # Count sprites by tag
+    tags = {{}}
+    for s in lvl._sprites:
+        if s.tags:
+            for t in s.tags:
+                tags[t] = tags.get(t, 0) + 1
+    d["sprite_tags"] = tags
+    d["num_sprites"] = len(lvl._sprites)
+    info["levels"].append(d)
+# Current level state
+game.set_level(0)
+cl = game.current_level
+info["current_level_data"] = {{}}
+if hasattr(cl, "_data") and cl._data:
+    info["current_level_data"] = {{k: v for k, v in cl._data.items()}}
+# Sprite positions for current level
+sprite_info = []
+for s in cl._sprites:
+    si = {{"name": s.name, "x": s.x, "y": s.y, "visible": s.is_visible}}
+    if s.tags:
+        si["tags"] = list(s.tags)
+    si["w"] = s.width
+    si["h"] = s.height
+    sprite_info.append(si)
+info["level1_sprites"] = sprite_info
+print(json.dumps(info, indent=2, default=str))
+'''
+        try:
+            result = subprocess.run(
+                [python, "-c", code],
+                capture_output=True, text=True, timeout=15,
+                cwd=str(self.dataset_dir.parent),
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return "# === PRE-EXTRACTED GAME INFO (JSON) ===\n" + result.stdout.strip()
+            return ""
+        except Exception:
+            return ""
 
     def _summarize_source(self, text: str, path) -> str:
-        """Extract the most useful parts of a game source for the LLM."""
+        """Extract the most useful parts of a game source for the LLM.
+        Provides pre-parsed structure so the model doesn't have to regex raw source."""
+        import re as _re
         lines = text.split('\n')
-        parts = [f"# Game source: {path} ({len(lines)} lines total)\n"]
+        parts = [f"# Game source: {path} ({len(lines)} lines total)"]
+        parts.append(f"# To read full source in run_python: open('{path}').read()")
 
-        # Find class definition and step function
+        # Extract class name
+        class_name = None
         class_start = None
         for i, line in enumerate(lines):
-            if line.startswith('class ') and '(ARCBaseGame)' in line:
+            m = _re.match(r'class (\w+)\(ARCBaseGame\)', line)
+            if m:
+                class_name = m.group(1)
                 class_start = i
                 break
+        if class_name:
+            parts.append(f"\n# Game class: {class_name}(ARCBaseGame)")
 
+        # Extract available_actions from __init__
+        for line in lines:
+            if 'available_actions' in line and '[' in line:
+                parts.append(f"# {line.strip()}")
+                break
+
+        # Extract constants (color values, timing, etc)
+        parts.append("\n# === CONSTANTS ===")
+        for line in lines:
+            stripped = line.strip()
+            if ('=' in stripped and not stripped.startswith(' ') and
+                not stripped.startswith('#') and not stripped.startswith('sprites') and
+                not stripped.startswith('levels') and not stripped.startswith('"') and
+                not stripped.startswith('class ') and not stripped.startswith('def ')):
+                if any(c.isdigit() for c in stripped) and len(stripped) < 80:
+                    parts.append(stripped)
+
+        # Extract level data dicts (most important for solving)
+        parts.append("\n# === LEVEL DATA (extracted data= dicts) ===")
+        import ast
+        level_num = 0
+        for i, line in enumerate(lines):
+            if '# Level' in line:
+                level_num += 1
+                parts.append(f"\n{line.strip()}")
+            if 'data={' in line or 'data =' in line:
+                # Grab the data dict block
+                block = []
+                for j in range(i, min(i + 25, len(lines))):
+                    block.append(lines[j])
+                    if '}' in lines[j] and lines[j].strip().endswith('},') or lines[j].strip().endswith('},'):
+                        break
+                    if lines[j].strip() == '},':
+                        break
+                parts.append('    ' + '\n    '.join(l.strip() for l in block))
+
+        # Include full game class (the critical logic)
         if class_start is not None:
             game_logic = '\n'.join(lines[class_start:])
-            parts.append("# === GAME CLASS (full logic) ===\n")
+            parts.append("\n# === GAME CLASS (full logic) ===\n")
             parts.append(game_logic)
-
-        # Find constants
-        for i, line in enumerate(lines):
-            if '=' in line and not line.startswith(' ') and not line.startswith('#'):
-                stripped = line.strip()
-                if stripped and not stripped.startswith('sprites') and not stripped.startswith('levels'):
-                    if any(c.isdigit() for c in stripped):
-                        parts.insert(1, f"# CONSTANT: {stripped}")
-
-        # Include level data sections
-        in_levels = False
-        level_lines = []
-        for i, line in enumerate(lines):
-            if 'levels = [' in line:
-                in_levels = True
-            if in_levels:
-                level_lines.append(line)
-                if line.strip() == ']' and len(level_lines) > 2:
-                    in_levels = False
-
-        if level_lines:
-            levels_text = '\n'.join(level_lines)
-            if len(levels_text) > 8000:
-                parts.append("\n# === LEVEL DEFINITIONS (truncated, full data dicts) ===")
-                parts.append(f"# Full source file: {path}")
-                for i, line in enumerate(level_lines):
-                    if 'data={' in line or 'Level(' in line or '# Level' in line:
-                        chunk = level_lines[i:i+20]
-                        parts.append('\n'.join(chunk))
-            else:
-                parts.append("\n# === LEVEL DEFINITIONS ===\n")
-                parts.append(levels_text)
 
         result = '\n'.join(parts)
         if len(result) > 15000:
-            result = result[:15000] + f"\n\n# ... [truncated — use run_python to read full source from {path}]"
+            result = result[:15000] + f"\n\n# ... [truncated — read full source: open('{path}').read()]"
         return result
 
     def _run_python(self, code: str) -> str:
