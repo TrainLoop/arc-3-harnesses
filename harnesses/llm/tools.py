@@ -1,9 +1,11 @@
 """
 Tool definitions and executor for the LLM agent.
 The LLM can call these tools to analyze the game before deciding actions.
+Supports all action types: directional (1-5), click (6 with x,y), undo (7).
 """
 
 import subprocess
+import sys
 import json
 from pathlib import Path
 from collections import deque
@@ -17,7 +19,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "read_game_source",
-            "description": "Read the full Python source code of the current game. Use this to understand game mechanics, level layouts, sprites, win conditions, etc.",
+            "description": "Read the Python source code of the current game. Contains ALL game mechanics, sprites, levels, win conditions. Call this FIRST for any new game.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -25,13 +27,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "run_python",
-            "description": "Run a Python script to analyze the game source or compute paths. The script runs in a subprocess with a 30s timeout. You can import json, math, collections, etc. Print results to stdout.",
+            "description": "Run a Python script to analyze game source or compute solutions. Has access to arcengine, numpy, json, math, collections. The game source file path is shown in the read_game_source output. Print results to stdout.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python code to execute",
+                        "description": "Python code to execute. Has 30s timeout.",
                     }
                 },
                 "required": ["code"],
@@ -42,7 +44,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_frame_region",
-            "description": "Get exact pixel values for a rectangular region of the current frame. Useful for inspecting specific objects or areas.",
+            "description": "Get exact pixel color values for a rectangular region of the current 64x64 frame. Useful for inspecting specific sprites or areas.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -59,11 +61,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_action_history",
-            "description": "Get the last N actions taken and whether they caused frame changes. Helps identify walls, movement patterns, and game mechanics.",
+            "description": "Get the last N actions taken and whether they caused frame changes. Helps identify walls, patterns, and game responses.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "count": {"type": "integer", "description": "Number of recent actions to return (default 20)"},
+                    "count": {"type": "integer", "description": "Number of recent actions (default 20)"},
                 },
                 "required": [],
             },
@@ -73,18 +75,26 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "submit_actions",
-            "description": "Submit a sequence of actions to execute. Use this when you have computed a multi-step plan (e.g., a path from source analysis). Actions: 1=up, 2=down, 3=left, 4=right.",
+            "description": "Submit a sequence of actions to execute. For directional games: [1,2,3,4] = up/down/left/right. For click games: provide actions list AND clicks list with [x,y] coordinates for each action 6.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "actions": {
                         "type": "array",
                         "items": {"type": "integer"},
-                        "description": "List of action IDs to execute in order",
+                        "description": "List of action IDs to execute in order (1-7)",
+                    },
+                    "clicks": {
+                        "type": "array",
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                        },
+                        "description": "For action 6 (click): list of [x, y] coordinates. One per action-6 in the actions list.",
                     },
                     "reasoning": {
                         "type": "string",
-                        "description": "Brief explanation of why these actions",
+                        "description": "Brief explanation of the plan",
                     },
                 },
                 "required": ["actions"],
@@ -104,13 +114,15 @@ class ToolExecutor:
         self.action_history: deque = deque(maxlen=100)
         self._source_cache: str | None = None
         self._pending_actions: list[int] = []
+        self._pending_clicks: list[list[int]] = []  # for action 6
+        self._click_index: int = 0
 
     def update(self, obs: GameObservation, action_id: int | None = None,
                frame_changed: bool = False):
-        """Update state after a game step."""
         self.current_obs = obs
         if action_id is not None:
-            names = {1: "up", 2: "down", 3: "left", 4: "right", 5: "action5", 6: "click", 7: "undo"}
+            names = {1: "up", 2: "down", 3: "left", 4: "right",
+                     5: "action5", 6: "click", 7: "undo"}
             self.action_history.append({
                 "action": action_id,
                 "name": names.get(action_id, f"action{action_id}"),
@@ -127,8 +139,13 @@ class ToolExecutor:
             return self._pending_actions.pop(0)
         return None
 
+    def pop_click(self) -> list[int] | None:
+        """Pop the next click coordinate for action 6."""
+        if self._pending_clicks:
+            return self._pending_clicks.pop(0)
+        return None
+
     def execute(self, tool_name: str, args: dict) -> str:
-        """Execute a tool and return the result as a string."""
         try:
             if tool_name == "read_game_source":
                 return self._read_source()
@@ -142,7 +159,9 @@ class ToolExecutor:
                 return self._get_history(args.get("count", 20))
             elif tool_name == "submit_actions":
                 return self._submit_actions(
-                    args.get("actions", []), args.get("reasoning", ""))
+                    args.get("actions", []),
+                    args.get("clicks", []),
+                    args.get("reasoning", ""))
             else:
                 return f"Unknown tool: {tool_name}"
         except Exception as e:
@@ -151,13 +170,15 @@ class ToolExecutor:
     def _read_source(self) -> str:
         if self._source_cache:
             return self._source_cache
+        # Try short game id first, then with version
         source_path = self.dataset_dir / "games" / self.game_id / "source.py"
         if not source_path.exists():
-            return f"Source not found at {source_path}"
+            # Try without version suffix (e.g., ls20 instead of ls20-9607627b)
+            short_id = self.game_id.split("-")[0] if "-" in self.game_id else self.game_id
+            source_path = self.dataset_dir / "games" / short_id / "source.py"
+        if not source_path.exists():
+            return f"Source not found for {self.game_id}"
         text = source_path.read_text()
-        # Extract key sections to keep output manageable
-        # Full source is too long (2000+ lines) — provide a structured summary
-        # plus the critical game class
         summary = self._summarize_source(text, source_path)
         self._source_cache = summary
         return summary
@@ -175,12 +196,11 @@ class ToolExecutor:
                 break
 
         if class_start is not None:
-            # Include from class definition to end of file (game logic)
             game_logic = '\n'.join(lines[class_start:])
             parts.append("# === GAME CLASS (full logic) ===\n")
             parts.append(game_logic)
 
-        # Find constants (colors, timing values etc)
+        # Find constants
         for i, line in enumerate(lines):
             if '=' in line and not line.startswith(' ') and not line.startswith('#'):
                 stripped = line.strip()
@@ -188,7 +208,7 @@ class ToolExecutor:
                     if any(c.isdigit() for c in stripped):
                         parts.insert(1, f"# CONSTANT: {stripped}")
 
-        # Include level data sections (critical for layout extraction)
+        # Include level data sections
         in_levels = False
         level_lines = []
         for i, line in enumerate(lines):
@@ -201,15 +221,11 @@ class ToolExecutor:
 
         if level_lines:
             levels_text = '\n'.join(level_lines)
-            # Truncate huge sprite position lists but keep data dicts
             if len(levels_text) > 8000:
-                parts.append("\n# === LEVEL DEFINITIONS (truncated sprite lists, full data dicts) ===")
-                parts.append("# Use run_python with the source file path to extract full level data")
-                parts.append(f"# Source file: {path}")
-                # Just include level data dicts
+                parts.append("\n# === LEVEL DEFINITIONS (truncated, full data dicts) ===")
+                parts.append(f"# Full source file: {path}")
                 for i, line in enumerate(level_lines):
                     if 'data={' in line or 'Level(' in line or '# Level' in line:
-                        # Include this line and next ~15 lines (the data dict)
                         chunk = level_lines[i:i+20]
                         parts.append('\n'.join(chunk))
             else:
@@ -217,21 +233,23 @@ class ToolExecutor:
                 parts.append(levels_text)
 
         result = '\n'.join(parts)
-        if len(result) > 12000:
-            result = result[:12000] + "\n\n# ... [truncated — use run_python to read full source]"
+        if len(result) > 15000:
+            result = result[:15000] + f"\n\n# ... [truncated — use run_python to read full source from {path}]"
         return result
 
     def _run_python(self, code: str) -> str:
+        # Use the venv python so arcengine and numpy are available
+        python = str(Path(sys.executable))
         try:
             result = subprocess.run(
-                ["python3", "-c", code],
+                [python, "-c", code],
                 capture_output=True, text=True, timeout=30,
                 cwd=str(self.dataset_dir.parent),
             )
             output = result.stdout
             if result.returncode != 0:
-                output += f"\nSTDERR: {result.stderr[:1000]}"
-            return output[:5000]  # cap output
+                output += f"\nSTDERR: {result.stderr[:2000]}"
+            return output[:8000]
         except subprocess.TimeoutExpired:
             return "ERROR: Script timed out (30s limit)"
         except Exception as e:
@@ -261,9 +279,13 @@ class ToolExecutor:
             lines.append(f"  {i}: {h['name']} -> {changed} (level {h['levels_completed']})")
         return "\n".join(lines)
 
-    def _submit_actions(self, actions: list, reasoning: str) -> str:
+    def _submit_actions(self, actions: list, clicks: list = None, reasoning: str = "") -> str:
         if not actions:
             return "No actions provided"
         valid = [a for a in actions if a in (1, 2, 3, 4, 5, 6, 7)]
         self._pending_actions = valid
-        return f"Queued {len(valid)} actions. They will execute on subsequent steps."
+        self._pending_clicks = clicks or []
+        self._click_index = 0
+        note = f" (reasoning: {reasoning})" if reasoning else ""
+        click_note = f", {len(self._pending_clicks)} click coords" if self._pending_clicks else ""
+        return f"Queued {len(valid)} actions{click_note}{note}. They will execute on subsequent steps."
