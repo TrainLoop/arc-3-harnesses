@@ -19,7 +19,7 @@ import requests
 from arcengine import GameAction
 
 # Import the local solver
-from harness import GridSolver, load_game, ACTION_NAMES, build_state_description, LLMSolver
+from harness import GridSolver, load_game, ACTION_NAMES, ACTION_DELTAS, build_state_description, LLMSolver
 
 BASE_URL = "https://three.arcprize.org"
 GAME_ACTION_MAP = {
@@ -111,6 +111,160 @@ def get_api_key() -> str:
     return key
 
 
+class ReasoningLogger:
+    """Generates reasoning logs for each action in the solver plan."""
+
+    def __init__(self, game, solver, actions, level_idx):
+        self.game = game
+        self.solver = solver
+        self.actions = actions
+        self.level_idx = level_idx
+        self.pos = solver.start_pos
+        self.pw, self.ph = solver.pw, solver.ph
+
+        # Analyze the plan to annotate each action with context
+        self.annotations = self._annotate_plan()
+
+    def _annotate_plan(self):
+        """Pre-analyze the full plan to assign a phase/reason to each action."""
+        s = self.solver
+        goal = s.goals[0] if s.goals else None
+
+        # Compute needed changes
+        shape_steps = (goal["shape"] - s.shape) % s.n_shapes if goal else 0
+        color_steps = (goal["color_idx"] - s.color_idx) % s.n_colors if goal else 0
+        rot_steps = (goal["rotation_idx"] - s.rotation_idx) % 4 if goal else 0
+
+        changer_info = []
+        if shape_steps > 0 and "shape" in s.changers:
+            changer_info.append(("shape", shape_steps, s.changers["shape"][0]))
+        if color_steps > 0 and "color" in s.changers:
+            changer_info.append(("color", color_steps, s.changers["color"][0]))
+        if rot_steps > 0 and "rotation" in s.changers:
+            changer_info.append(("rotation", rot_steps, s.changers["rotation"][0]))
+
+        # Simulate the path to identify phases
+        annotations = []
+        pos = self.pos
+        coll_positions = set()
+        for cx, cy in s.collectibles:
+            cp = s._collection_pos(cx, cy)
+            if cp:
+                coll_positions.add(cp)
+
+        changer_positions = set()
+        for _, _, cpos in changer_info:
+            changer_positions.add(cpos)
+
+        visits_remaining = {ct: n for ct, n, _ in changer_info}
+        current_target = None
+        phase = "navigate"
+
+        for i, act in enumerate(self.actions):
+            dc, dr = ACTION_DELTAS[act]
+            nx, ny = pos[0] + dc * self.pw, pos[1] + dr * self.ph
+            if s.in_bounds(nx, ny) and not s.is_blocked(nx, ny):
+                if (nx, ny) in s.push_teleports:
+                    dest = s.push_teleports[(nx, ny)]
+                    annotations.append({
+                        "step": i + 1,
+                        "total": len(self.actions),
+                        "action": ACTION_NAMES[act],
+                        "from": list(pos),
+                        "to": list(dest),
+                        "phase": "push_block_teleport",
+                        "note": f"Push block launches player from {pos} to {dest}",
+                    })
+                    pos = dest
+                    continue
+                pos = (nx, ny)
+
+            # Determine what happened at this position
+            note = ""
+            if pos in coll_positions:
+                note = "Collected step refill - budget reset to max"
+                coll_positions.discard(pos)
+                phase = "collect_refill"
+            elif pos in changer_positions:
+                for ct, n, cpos in changer_info:
+                    if cpos == pos and visits_remaining.get(ct, 0) > 0:
+                        visits_remaining[ct] -= 1
+                        rem = visits_remaining[ct]
+                        note = f"Activated {ct} changer ({n - rem}/{n} visits done)"
+                        phase = f"visit_{ct}_changer"
+                        break
+            elif goal and pos == (goal["x"], goal["y"]):
+                note = "Reached goal with correct attributes - level complete!"
+                phase = "reach_goal"
+            else:
+                # Determine current target
+                for ct, n, cpos in changer_info:
+                    if visits_remaining.get(ct, 0) > 0:
+                        current_target = f"{ct} changer at {cpos}"
+                        phase = f"navigate_to_{ct}_changer"
+                        break
+                else:
+                    if goal:
+                        current_target = f"goal at ({goal['x']},{goal['y']})"
+                        phase = "navigate_to_goal"
+
+            annotations.append({
+                "step": i + 1,
+                "total": len(self.actions),
+                "action": ACTION_NAMES[act],
+                "from": [pos[0] - dc * self.pw, pos[1] - dr * self.ph],
+                "to": list(pos),
+                "phase": phase,
+                "target": current_target,
+                **({"note": note} if note else {}),
+            })
+
+        return annotations
+
+    def get_reasoning(self, action_idx):
+        """Get the reasoning dict for a specific action index."""
+        if action_idx < len(self.annotations):
+            return self.annotations[action_idx]
+        return {"step": action_idx + 1, "action": "unknown"}
+
+    def get_plan_summary(self):
+        """Get a summary reasoning for the RESET/plan phase."""
+        s = self.solver
+        goal = s.goals[0] if s.goals else None
+        summary = {
+            "solver": "BFS multi-waypoint with budget-aware collectible routing",
+            "level": self.level_idx + 1,
+            "player_start": list(s.start_pos),
+            "total_planned_actions": len(self.actions),
+            "step_budget": s.step_budget,
+        }
+        if goal:
+            summary["goal"] = {
+                "position": [goal["x"], goal["y"]],
+                "required_shape": goal["shape"],
+                "required_color_idx": goal["color_idx"],
+                "required_rotation_idx": goal["rotation_idx"],
+            }
+            summary["current_attrs"] = {
+                "shape": s.shape,
+                "color_idx": s.color_idx,
+                "rotation_idx": s.rotation_idx,
+            }
+            shape_s = (goal["shape"] - s.shape) % s.n_shapes
+            color_s = (goal["color_idx"] - s.color_idx) % s.n_colors
+            rot_s = (goal["rotation_idx"] - s.rotation_idx) % 4
+            changes = []
+            if shape_s > 0:
+                changes.append(f"{shape_s}x shape changer")
+            if color_s > 0:
+                changes.append(f"{color_s}x color changer")
+            if rot_s > 0:
+                changes.append(f"{rot_s}x rotation changer")
+            summary["strategy"] = f"Visit {', '.join(changes) if changes else 'no changers'}, then reach goal"
+            summary["collectibles_available"] = len(s.collectibles)
+        return summary
+
+
 def main():
     game_id = sys.argv[1] if len(sys.argv) > 1 else "ls20"
     base_dir = Path(__file__).parent
@@ -182,6 +336,11 @@ def main():
 
         print(f"  [{solver_type}] Plan: {len(actions)} actions")
 
+        # Build reasoning logger for this level's plan
+        logger = ReasoningLogger(local_game, solver, actions, level_idx)
+        plan_summary = logger.get_plan_summary()
+        print(f"  Strategy: {plan_summary.get('strategy', 'N/A')}")
+
         # Execute via API
         prev_levels = frame.get("levels_completed", 0)
         level_solved = False
@@ -191,8 +350,14 @@ def main():
             if ga is None:
                 continue
 
+            # Get reasoning for this action
+            reasoning = logger.get_reasoning(i)
+
             try:
-                frame = client.action(game_full_id, guid, ga)
+                frame = client.action(
+                    game_full_id, guid, ga,
+                    reasoning=json.dumps(reasoning),
+                )
             except Exception as e:
                 print(f"  API error at action {i}: {e}")
                 break
