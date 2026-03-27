@@ -1,0 +1,33 @@
+ARC-AGI-3 LLM Harness - All Games
+============================================================
+Date: 2026-03-26T20:38:57.461698
+Scorecard: 23c6d8fa-9924-4da6-9961-35cf4a89dd16
+Games: 25
+
+Total: 4/182 levels solved
+
+  ar25-e3c63847            0/8     0 actions
+  bp35-0a0ad940            0/9     0 actions
+  cd82-fb555c5d            0/6     0 actions
+  cn04-65d47d14            0/5     0 actions
+  dc22-4c9bff3e            0/6     0 actions
+  ft09-0d8bbf25            0/6     0 actions
+  g50t-5849a774            0/7     0 actions
+  ka59-9f096b4a            0/7     0 actions
+  lf52-271a04aa           0/10     0 actions
+  lp85-305b61c3            0/8     0 actions
+  ls20-9607627b            4/7   208 actions
+  m0r0-dadda488            0/6     0 actions
+  r11l-aa269680            0/6     0 actions
+  re86-4e57566e            0/8     0 actions
+  s5i5-a48e4b1d            0/8     0 actions
+  sb26-7fbdac44            0/8     0 actions
+  sc25-f9b21a2f            0/6     0 actions
+  sk48-41055498            0/8     0 actions
+  sp80-0ee2d095            0/6     0 actions
+  su15-4c352900            0/9     0 actions
+  tn36-ab4f63cc            0/7     0 actions
+  tr87-cd924810            0/6     0 actions
+  tu93-2b534c15            0/9     0 actions
+  vc33-9851e02b            0/7     0 actions
+  wa30-ee6fef47            0/9     0 actions
