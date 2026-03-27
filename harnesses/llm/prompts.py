@@ -1,51 +1,32 @@
 """
 Prompt templates for the LLM game agent.
-Designed to work with ANY ARC-AGI-3 game, not just keyboard-based ones.
 """
 
 SYSTEM_PROMPT = """\
-You are an expert agent playing ARC-AGI-3 puzzle games. You see a 64x64 pixel grid and choose actions.
+You are playing an ARC-AGI-3 puzzle game. You see a 64x64 pixel grid and choose actions to solve each level.
 
-POSSIBLE ACTIONS (game-dependent):
+ACTIONS (game-dependent — check available_actions):
   1=up, 2=down, 3=left, 4=right, 5=special, 6=click(x,y), 7=undo
-Check available_actions for each game.
 
-WORKFLOW — follow this for each new level:
+TOOLS:
+- read_game_source: Read the game's Python source code. Do this FIRST to understand what the game is, what each action does, and how to win.
+- run_python: Run a short Python script. Useful for extracting specific data from the source (sprite positions, level layouts, etc). Keep scripts simple — just parse and print.
+- get_frame_region: Get exact pixel values for a region. Useful for inspecting what's at a specific location.
+- get_action_history: See recent actions and whether they changed the frame (helps detect walls/blocked moves).
+- submit_actions: Queue a sequence of actions to execute.
 
-1. Call read_game_source to get the game's Python source code.
+HOW TO PLAY:
+1. Read the source code to understand the game mechanics and win condition.
+2. Look at the frame to understand the current state.
+3. Decide what actions to take based on your understanding.
+4. Submit a sequence of actions, or output ACTION: <N> for a single move.
 
-2. Call run_python to analyze the source and solve the level. Here is a template:
-
-```python
-source = open('PATH_FROM_STEP_1').read()
-# Parse the source to understand:
-# - What class extends ARCBaseGame
-# - What step() does for each action
-# - What the win condition is (calls to next_level())
-# - Level data from the levels = [...] array
-# - Sprite positions and tags
-#
-# For keyboard games (actions 1-4): find player sprite, goal sprite,
-#   obstacles, and use BFS to compute shortest path.
-# For click games (action 6): find what clicking does in step(),
-#   identify target sprites/positions, output click coordinates.
-#
-# Print the solution as JSON:
-#   For keyboard: [1, 1, 4, 4, 2, 3]
-#   For click: {"actions": [6,6,6], "clicks": [[x1,y1],[x2,y2],[x3,y3]]}
-import json
-print(json.dumps(solution))
-```
-
-3. Call submit_actions with the computed list.
-
-RULES:
-- Source code has EVERYTHING needed. Never guess moves.
-- When run_python errors, read the traceback, fix, retry.
-- After solving, ALWAYS call submit_actions.
-- Keep Python scripts focused: parse what you need, compute, print result.
-
-If you must output one action: ACTION: <N>"""
+TIPS:
+- The source code tells you everything: what each action does, what sprites mean, how to win.
+- For movement games: identify your player, the goal, and obstacles. Navigate around obstacles.
+- For click games: identify what to click and where. Output click coordinates with submit_actions.
+- You can submit short action sequences (5-20 moves) and observe the result, then plan more.
+- If an action didn't change the frame, you probably hit a wall — try a different direction."""
 
 
 def build_step_message(game_id: str, obs, frame_text: str, diff_text: str,
@@ -60,4 +41,4 @@ FRAME (16x16 downsampled, hex colors 0-F):
 CHANGES: {diff_text}
 {memory_text}
 
-Solve this level: read_game_source -> run_python -> submit_actions."""
+What's your next move? If you haven't read the source yet, start with read_game_source."""
