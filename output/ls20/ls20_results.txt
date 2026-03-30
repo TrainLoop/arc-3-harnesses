@@ -1,0 +1,96 @@
+ARC-AGI-3 Claude Code Harness Results
+============================================================
+Game: ls20-9607627b
+Date: 2026-03-27
+Harness: Claude Code CLI (claude -p)
+Timeout: 1200s per level
+
+Levels solved: 2 / 7
+Total actions: 58
+Total wall-clock time: ~2545s (~42 min)
+  Analysis phase: ~280s
+  Level solving:  ~2265s
+
+============================================================
+LEVEL METADATA & RESULTS
+============================================================
+
+--- Level 1: Tutorial ---
+  Player start:   (34, 45)
+  Goal tile:      (34, 10)
+  Start icon:     shape=5, color=9, rotation=270
+  Goal icon:      shape=5, color=9, rotation=0
+  Delta needed:   +1 rot
+  Steps/move:     42 / 1
+  Step refills:   none
+  Modifiers:      rotation changer at (19, 30)
+  Result:         PASS (13 moves, 454s)
+  Moves:          LEFT, LEFT, LEFT, UP, UP, UP, UP, RIGHT, RIGHT, RIGHT, UP, UP, UP
+
+--- Level 2: Triple Rotation ---
+  Player start:   (29, 40)
+  Goal tile:      (14, 40)
+  Start icon:     shape=5, color=9, rotation=0
+  Goal icon:      shape=5, color=9, rotation=270
+  Delta needed:   +3 rot
+  Steps/move:     42 / 2 (21 effective moves)
+  Step refills:   (15, 16), (40, 51)
+  Modifiers:      rotation changer at (49, 45)
+  Result:         PASS (45 moves, 611s)
+  Moves:          RIGHT, UP, UP, UP, UP, UP, UP, RIGHT, RIGHT, RIGHT, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, LEFT, LEFT, RIGHT, RIGHT, UP, UP, DOWN, UP, UP, UP, UP, UP, UP, UP, LEFT, LEFT, LEFT, LEFT, LEFT, LEFT, LEFT, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN
+
+--- Level 3: Color + Rotation ---
+  Player start:   (9, 45)
+  Goal tile:      (54, 50)
+  Start icon:     shape=5, color=12 (idx 0), rotation=0
+  Goal icon:      shape=5, color=9 (idx 1), rotation=180
+  Delta needed:   +1 col, +2 rot
+  Steps/move:     42 / 2
+  Step refills:   (35, 16), (20, 31)
+  Modifiers:      color changer at (29, 45), rotation changer at (49, 10)
+  Result:         FAIL — timeout (1200s, no response)
+
+--- Level 4: Color Change + Pushers ---
+  Player start:   (54, 5)
+  Goal tile:      (9, 5)
+  Start icon:     shape=4, color=14 (idx 2), rotation=0
+  Goal icon:      shape=4, color=9 (idx 1), rotation=0
+  Delta needed:   +3 col
+  Steps/move:     42 / 1
+  Step refills:   (35, 51), (20, 16)
+  Modifiers:      color changer at (34, 30), shape changer at (24, 30) [avoid]
+  Result:         Not attempted
+
+--- Level 5: Moving Rotation Changer ---
+  Player start:   (49, 40)
+  Goal tile:      (54, 5)
+  Start icon:     shape=4, color=12 (idx 0), rotation=0
+  Goal icon:      shape=0, color=8 (idx 3), rotation=180
+  Delta needed:   +2 shp, +3 col, +2 rot
+  Steps/move:     42 / 2
+  Step refills:   (15, 46), (45, 6), (10, 11)
+  Modifiers:      shape changer at (19, 10), color changer at (29, 25), rotation changer at (14, 35) [moving]
+  Result:         Not attempted
+
+--- Level 6: Two Goals + Moving Modifiers ---
+  Player start:   (24, 50)
+  Goal tiles:     (54, 50), (54, 35)
+  Start icon:     shape=0, color=14 (idx 2), rotation=0
+  Goal 1 icon:    shape=5, color=9 (idx 1), rotation=90
+  Goal 2 icon:    shape=0, color=8 (idx 3), rotation=180
+  Delta (goal 1): +5 shp, +3 col, +1 rot
+  Steps/move:     42 / 1
+  Step refills:   (40, 6), (10, 46), (10, 6)
+  Modifiers:      shape changer [moving, y=10], color changer [moving, (19-29, 20-30)], rotation changer [moving, y=40]
+  Result:         Not attempted
+
+--- Level 7: Fog of War ---
+  Player start:   (19, 15)
+  Goal tile:      (29, 50)
+  Start icon:     shape=1, color=12 (idx 0), rotation=0
+  Goal icon:      shape=0, color=8 (idx 3), rotation=180
+  Delta needed:   +5 shp, +3 col, +2 rot
+  Steps/move:     42 / 2
+  Fog:            YES (20px visibility radius)
+  Modifiers:      rotation changer at (54, 10) [moving]
+  Result:         Not attempted

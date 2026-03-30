@@ -1,0 +1,24 @@
+============================================================
+SOURCE CODE ANALYSIS & SOLUTIONS
+============================================================
+Now I have a full understanding of the game. Let me analyze the mechanics and solve each level.
+
+## Game Mechanics Analysis
+
+**Canvas**: 10x10 grid starting all black (0). Goal: match the target pattern at all positions EXCEPT the two diagonals.
+
+**Basket System**: 8 positions around a 3x3 ring (excluding center).
+- Actions 1-4 (U/D/L/R) move the basket on this ring.
+- ACTION5 launches the basket, painting a region of the canvas with the current color.
+- ACTION6 clicks: select color buttons or trigger gates.
+
+## Results
+
+- Level 1: SOLVED (5 moves) — paint bottom half white
+- Level 2: SOLVED (6 moves) — paint top half white, select color 12, paint lower-right triangle
+- Level 3: SOLVED (19 moves) — 4 paint operations + gate click with color 12
+- Level 4: SOLVED (14 moves) — upper-right triangle 12, lower-right 15, left half 9, gate 11
+- Level 5: SOLVED (18 moves) — upper-right 9, lower-left 14, lower-right 12, gate 8
+- Level 6: FAILED (18 moves exhausted) — upper-left 8, right half 14, gate 11, gate 15
+
+See cd82_analysis.txt for full per-level strategy and move sequences.

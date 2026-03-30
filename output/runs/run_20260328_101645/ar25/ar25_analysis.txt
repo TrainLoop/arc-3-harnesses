@@ -1,0 +1,83 @@
+All 8 levels verified. Here are the solutions:
+
+## Game Mechanics Summary
+
+This is a **reflection puzzle**. You move pieces and mirror axes on a 21x21 grid. Pieces reflect across vertical axes (x=constant) and horizontal axes (y=constant). The goal is to position pieces so their reflections cover all target dots (color 11).
+
+- **Actions 1-4**: Move selected object (UP/DOWN/LEFT/RIGHT)
+- **Action 5**: Cycle selection to next object
+- **Action 7**: Undo
+
+---
+
+## Level 1
+**Setup**: Fixed vertical axis at x=10. One piece `qdwjaukgpe` at (6,5). 5 targets.
+**Strategy**: Move piece to (1,15) so its reflection covers all targets.
+- Start selected on piece. Move LEFT 5, DOWN 10.
+
+```json
+[3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 2
+**Setup**: Vertical axis at x=12 (movable). Piece `noaqoztjku` at (15,6). 8 targets.
+**Strategy**: Move axis to x=10, piece to (15,14).
+- Start on axis. LEFT 2, switch to piece, DOWN 8.
+
+```json
+[3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 3
+**Setup**: Horizontal axis at y=16 (movable). Two pieces: `jewbedvusb` at (15,9), `jidgddyrxm` at (4,7). 26 targets.
+**Strategy**: Move axis to y=9. Move jewbedvusb to (3,14), jidgddyrxm to (11,14). Reflections about y=9 create symmetric coverage.
+- Start on axis. UP 7, switch to jewb, LEFT 12 + DOWN 5, switch to jid, RIGHT 7 + DOWN 7.
+
+```json
+[1, 1, 1, 1, 1, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 4
+**Setup**: Horizontal axis at y=3 (movable). Two pieces: `hylzmztfzg` at (4,6), `ucyadwewwc` at (6,10). 24 targets.
+**Strategy**: Move axis to y=9. Move hylzmztfzg to (11,6), ucyadwewwc to (13,10).
+- Start on axis. DOWN 6, switch to hyl, RIGHT 7, switch to ucy, RIGHT 7.
+
+```json
+[2, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4]
+```
+
+## Level 5
+**Setup**: Two axes — horizontal at y=5, vertical at x=3. One piece `sezinyfuyf` at (14,12). 23 targets.
+**Strategy**: Move horizontal axis to y=9, vertical axis to x=8, piece to (4,5). 4-fold symmetry creates full coverage.
+- Start on h-axis. DOWN 4, switch to v-axis, RIGHT 5, switch to piece, LEFT 10 + UP 7.
+
+```json
+[2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 6
+**Setup**: Two axes — horizontal at y=0, vertical at x=7. Two pieces: `bdahvvicge` at (14,3), `jsfvegkkzt` at (17,8). 52 targets.
+**Strategy**: Move axes to x=6, y=11. Move bdahvvicge to (7,15), jsfvegkkzt to (2,12). Perfect 4-fold coverage.
+- Start on h-axis. DOWN 11, switch to v-axis, LEFT 1, switch to bda, LEFT 7 + DOWN 12, switch to jsf, LEFT 15 + DOWN 4.
+
+```json
+[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 5, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2]
+```
+
+## Level 7
+**Setup**: Two axes — horizontal at y=5, vertical at x=3. Two pieces: `hfkrronohx` at (5,16), `xusbtwzcmm` at (17,13). 42 targets.
+**Strategy**: Move axes to x=12, y=7. Move hfkrronohx to (8,10), xusbtwzcmm to (15,1).
+- Start on h-axis. DOWN 2, switch to v-axis, RIGHT 9, switch to hfk, RIGHT 3 + UP 6, switch to xus, LEFT 2 + UP 12.
+
+```json
+[2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 1, 1, 1, 1, 1, 1, 5, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 8
+**Setup**: Two axes — horizontal at y=5, vertical at x=3. Two pieces: `tsjkpdckto` at (7,7), `ujqxnvjoap` at (13,13). 60 targets.
+**Strategy**: Move axes to x=12, y=11. Move tsjkpdckto to (16,3), ujqxnvjoap to (4,6).
+- Start on h-axis. DOWN 6, switch to v-axis, RIGHT 9, switch to tsj, RIGHT 9 + UP 4, switch to ujq, LEFT 9 + UP 7.
+
+```json
+[2, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1]
+```

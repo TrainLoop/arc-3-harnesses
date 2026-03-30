@@ -1,0 +1,58 @@
+{
+  "game_id": "ls20-9607627b",
+  "timestamp": "20260328_152632",
+  "levels_solved": 7,
+  "total_levels": 7,
+  "analysis_time_seconds": 1765.8,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 13,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": true,
+      "moves": 45,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 3,
+      "solved": true,
+      "moves": 41,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 4,
+      "solved": true,
+      "moves": 43,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 5,
+      "solved": true,
+      "moves": 44,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 6,
+      "solved": true,
+      "moves": 72,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 7,
+      "solved": true,
+      "moves": 53,
+      "time_seconds": 0,
+      "reason": "solved"
+    }
+  ]
+}

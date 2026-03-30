@@ -1,0 +1,273 @@
+============================================================
+SOURCE CODE ANALYSIS
+============================================================
+Now I have a thorough understanding. Here's the full analysis:
+
+---
+
+## Game Overview: ls20
+
+This is a **grid-based puzzle game** on a 64x64 board where you move a 5x5 player character in steps of 5 pixels. The core mechanic is **matching a carried icon's shape, color, and rotation** to what each goal tile requires, then stepping onto the goal tile.
+
+### Controls
+- **ACTION1** = Up (y-1), **ACTION2** = Down (y+1), **ACTION3** = Left (x-1), **ACTION4** = Right (x+1)
+- Each move advances 5 pixels
+
+### Key Elements
+| Tag | Role |
+|-----|------|
+| `ihdgageizm` (yellow 5x5) | **Wall** — blocks movement |
+| `rjlbuycveu` (gray 5x5) | **Goal tile** — step on it with matching icon to clear |
+| `kvynsvxbpi` (diagonal) | **Goal indicator** — shows required shape/color/rotation |
+| `npxgalaybz` (green ring) | **Step refill** — resets step counter to max |
+| `ttfwljgohq` / `mkjdaccuuf` | **Shape changer** — cycles shape +1 (6 shapes total, wraps) |
+| `soyhouuebz` | **Color changer** — cycles color +1 through [12→9→14→8→...] |
+| `rhsxkxzdjz` | **Rotation changer** — cycles rotation +90° [0→90→180→270→...] |
+| `gbvqrjtaqo` (pushers) | **Conveyor walls** — push you in their direction suffix (_t=up, _b=down, _l=left, _r=right) |
+
+### Lives & Steps
+- **3 lives** per level attempt
+- **42 steps** per life, decremented by `StepsDecrement` (1 or 2) per move
+- If steps run out → lose a life, reset position & icon, restore map
+
+---
+
+## Level-by-Level Strategy
+
+### Level 1 — Tutorial
+| | Value |
+|---|---|
+| **Player start** | (34, 45) |
+| **Goal tile** | (34, 10) |
+| **Start icon** | shape=5, color=9 (maroon), rotation=270° |
+| **Goal icon** | shape=5, color=9, rotation=0° |
+| **Steps** | 42, -1 per move |
+
+**Delta needed**: +1 rotation only
+
+**Strategy**: Navigate to the **rotation changer** at (19, 30) — one hit changes 270°→0°. Then navigate to the goal tile at (34, 10). With 42 moves at cost 1 each, you have plenty of budget. Rough path: move left & up to (19, 30), step on rotation changer, then move right & up to (34, 10).
+
+---
+
+### Level 2 — Triple Rotation
+| | Value |
+|---|---|
+| **Player start** | (29, 40) |
+| **Goal tile** | (14, 40) |
+| **Start icon** | shape=5, color=9, rotation=0° |
+| **Goal icon** | shape=5, color=9, rotation=270° |
+| **Steps** | 42, -2 per move (21 effective moves) |
+| **Step refills** | (15, 16) and (40, 51) |
+
+**Delta needed**: +3 rotation (0°→90°→180°→270°)
+
+**Strategy**: You must visit the **rotation changer** at (49, 45) **three times**. With only 21 effective moves, you'll need to pick up at least one **step refill** (green ring) along the way. Navigate east to the rotation changer, loop back, grab a refill, return to rotation changer, repeat, then go to the goal at (14, 40).
+
+---
+
+### Level 3 — Color + Rotation
+| | Value |
+|---|---|
+| **Player start** | (9, 45) |
+| **Goal tile** | (54, 50) |
+| **Start icon** | shape=5, color=12 (purple, idx 0), rotation=0° |
+| **Goal icon** | shape=5, color=9 (maroon, idx 1), rotation=180° |
+| **Steps** | 42, -2 per move |
+| **Step refills** | (35, 16) and (20, 31) |
+
+**Delta needed**: +1 color, +2 rotation
+
+**Strategy**: Hit the **color changer** at (29, 45) **once** (12→9), then the **rotation changer** at (49, 10) **twice** (0→90→180). Use step refills as needed since you have limited moves. Final destination is the goal tile at (54, 50) in the bottom-right area.
+
+---
+
+### Level 4 — Color Change + Pushers
+| | Value |
+|---|---|
+| **Player start** | (54, 5) |
+| **Goal tile** | (9, 5) |
+| **Start icon** | shape=4, color=14 (grey, idx 2), rotation=0° |
+| **Goal icon** | shape=4, color=9 (maroon, idx 1), rotation=0° |
+| **Steps** | 42, -1 per move |
+| **Step refills** | (35, 51) and (20, 16) |
+
+**Delta needed**: +3 color (14→8→12→9), shape and rotation unchanged
+
+**Strategy**: Hit the **color changer** at (34, 30) **three times**. **Avoid the shape changer** at (24, 30) — it's nearby at the same y-coordinate, so navigate carefully. This level has multiple **pushers** (conveyor walls) that can carry you across sections. Use the pushers to reach areas efficiently. After getting color to 9, navigate to the goal at (9, 5) in the top-left.
+
+---
+
+### Level 5 — Moving Rotation Changer
+| | Value |
+|---|---|
+| **Player start** | (49, 40) |
+| **Goal tile** | (54, 5) |
+| **Start icon** | shape=4, color=12 (purple, idx 0), rotation=0° |
+| **Goal icon** | shape=0, color=8 (azure, idx 3), rotation=180° |
+| **Steps** | 42, -2 per move |
+| **Step refills** | (15, 46), (45, 6), (10, 11) |
+
+**Delta needed**: +2 shape (4→5→0), +3 color (12→9→14→8), +2 rotation (0→90→180°)
+
+**Strategy**: This level is harder — you need all three modifier types. The **rotation changer** at (14, 35) is a **moving entity** that walks back and forth on a horizontal track. You must intercept it as it passes. Hit:
+- Shape changer at (19, 10) **2x** 
+- Color changer at (29, 25) **3x**
+- Moving rotation changer (near y=35) **2x** — time your arrival to intercept it
+- Use all three step refills. Navigate to goal at (54, 5).
+
+---
+
+### Level 6 — Two Goals + Moving Modifiers
+| | Value |
+|---|---|
+| **Player start** | (24, 50) |
+| **Goal tiles** | (54, 50) and (54, 35) |
+| **Start icon** | shape=0, color=14 (grey, idx 2), rotation=0° |
+| **Goal 1** | shape=5, color=9 (idx 1), rotation=90° |
+| **Goal 2** | shape=0, color=8 (idx 3), rotation=180° |
+| **Steps** | 42, -1 per move |
+| **Step refills** | (40, 6), (10, 46), (10, 6) |
+
+**Delta for Goal 1**: +5 shape (wraps: 0→1→2→3→4→5), +3 color (14→8→12→9... wait no, idx 2→idx 1 = +3), +1 rotation
+
+This is the most complex level — **two separate goals** that must both be completed, and **all three modifiers are moving entities**:
+- Shape changer walks on track at y=10
+- Color changer walks on track around (19-29, 20-30)
+- Rotation changer walks on track at y=40
+
+**Strategy**: You must match icon to Goal 1 first, step on it, then re-configure to Goal 2 and step on it (or vice versa). After clearing one goal, the icon state persists, so plan the order to minimize total modifier hits. Use the three step refills liberally.
+
+---
+
+### Level 7 — Fog of War
+| | Value |
+|---|---|
+| **Player start** | (19, 15) |
+| **Goal tile** | (29, 50) |
+| **Start icon** | shape=1, color=12 (purple, idx 0), rotation=0° |
+| **Goal icon** | shape=0, color=8 (azure, idx 3), rotation=180° |
+| **Steps** | 42, -2 per move |
+| **Fog** | **YES** — visibility radius of 20 pixels around player |
+
+**Delta needed**: +5 shape (1→2→3→4→5→0, i.e. wraps), +3 color, +2 rotation
+
+**Strategy**: Same puzzle type but with **limited visibility** — you can only see within a 20-pixel radius. The **rotation changer** at (54, 10) is a **moving entity** on a vertical track. You must explore carefully and remember the layout. Multiple step refills are scattered around the map. Plan your route by memorizing positions of modifiers as you discover them, and be efficient since fog makes backtracking harder.
+
+---
+
+### General Tips
+1. **Grab step refills early** — they fully restore your 42 steps
+2. **Count modifier hits carefully** — overshooting wastes precious steps
+3. **Watch for pushers** — they can help skip wall sections or trap you
+4. **Moving modifiers** require timing — arrive at their track when they're nearby
+5. **Lives are precious** — 3 per level, running out = game over
+
+============================================================
+LEVEL 1
+============================================================
+Here's my analysis:
+
+**Game grid** (col 1-12, row 0-11, from source code walls):
+```
+     1  2  3  4  5  6  7  8  9 10 11 12
+r0:  W  W  W  W  W  W  W  W  W  W  W  W
+r1:  W  W  W  W  W  W  W  W  W  W  W  W
+r2:  W  W  W  W  W  W  G  W  W  W  W  W   ← Goal (34,10)
+r3:  W  W  W  W  W  W  .  W  W  W  W  W
+r4:  W  W  W  W  W  W  .  W  W  W  W  W
+r5:  W  W  .  .  .  .  .  .  .  .  W  W
+r6:  W  W  .  R  .  W  .  .  .  .  W  W   ← Rotation changer (19,30)
+r7:  W  W  .  .  .  W  .  .  .  .  W  W
+r8:  W  W  W  .  W  W  .  .  .  .  W  W
+r9:  W  W  W  .  .  .  P  .  .  .  W  W   ← Player (34,45)
+r10: W  W  W  W  W  W  W  W  W  W  W  W
+r11: W  W  W  W  W  W  W  W  W  W  W  W
+```
+
+**State:**
+- Icon: shape=5, color=9, rotation=270°
+- Goal: shape=5, color=9, rotation=0°
+- **Need:** +1 rotation hit (270° → 0°)
+
+**Path** (Player at col 7 → Rotation changer at col 4 → Goal at col 7):
+
+| # | Action | Position | Note |
+|---|--------|----------|------|
+| 1 | LEFT   | (29,45) col 6,r9 | |
+| 2 | LEFT   | (24,45) col 5,r9 | |
+| 3 | LEFT   | (19,45) col 4,r9 | |
+| 4 | UP     | (19,40) col 4,r8 | |
+| 5 | UP     | (19,35) col 4,r7 | |
+| 6 | UP     | (19,30) col 4,r6 | **Hit rotation changer** → 0° |
+| 7 | UP     | (19,25) col 4,r5 | |
+| 8 | RIGHT  | (24,25) col 5,r5 | |
+| 9 | RIGHT  | (29,25) col 6,r5 | |
+| 10| RIGHT  | (34,25) col 7,r5 | |
+| 11| UP     | (34,20) col 7,r4 | |
+| 12| UP     | (34,15) col 7,r3 | |
+| 13| UP     | (34,10) col 7,r2 | **Step on goal** → Level clear! |
+
+13 moves, well within the 42-step budget.
+
+```json
+[3, 3, 3, 1, 1, 1, 1, 4, 4, 4, 1, 1, 1]
+```
+
+============================================================
+LEVEL 2
+============================================================
+Now let me analyze the game state and plan the solution.
+
+**Level 2 Key Elements (from source code):**
+- **Player**: pixel (29, 40) → game grid gc=5, gr=8
+- **Goal tile**: pixel (14, 40) → gc=2, gr=8
+- **Rotation changer**: pixel (49, 45) → gc=9, gr=9
+- **Step refill 1**: pixel (15, 16) → picked up at gc=2, gr=3
+- **Step refill 2**: pixel (40, 51) → picked up at gc=7, gr=10
+- **Icon**: shape=5, color=9, rotation=0° → need rotation=270° (3 hits on rotation changer)
+- **Steps**: 42, decrement 2/move = 21 effective moves; refill pickup is free
+
+Let me build the walkability grid from wall positions and find the optimal route.
+
+**Walkability grid** (W=wall, .=open):
+```
+    gc: 0  1  2  3  4  5  6  7  8  9 10 11
+gr=0:  W  W  W  W  W  W  W  W  W  W  W  W
+gr=1:  W  W  W  .  .  .  .  .  .  .  W  W
+gr=2:  W  .  .  .  .  .  .  .  .  .  W  W
+gr=3:  W  .  .  .  W  .  .  W  .  .  W  W
+gr=4:  W  .  .  .  W  .  .  W  W  .  .  W
+gr=5:  W  W  .  W  W  W  .  .  W  .  .  W
+gr=6:  W  W  .  W  W  W  .  .  W  .  W  W
+gr=7:  W  W  .  W  W  .  .  W  W  .  W  W
+gr=8:  W  W  G  W  W  P  .  W  .  .  .  W
+gr=9:  W  W  W  W  W  W  W  W  .  .  .  W
+gr=10: W  W  W  W  W  W  W  .  .  .  .  W
+gr=11: W  W  W  W  W  W  W  W  W  W  W  W
+```
+
+**Strategy** (45 moves total):
+
+1. **Start → Rotation changer #1** (17 moves): RIGHT through gc=6 column UP to gr=2, RIGHT to gc=9, DOWN to gr=9
+2. **→ Step refill 2** (3 moves): DOWN, LEFT, LEFT to gc=7,gr=10 (steps restored to 42)
+3. **→ Rotation changer #2** (3 moves): RIGHT, RIGHT, UP back to gc=9,gr=9
+4. **Bounce for #3** (2 moves): UP, DOWN back to gc=9,gr=9
+5. **→ Goal via refill 1** (20 moves): UP×7 to gr=2, LEFT×7 to gc=2, DOWN through gc=2,gr=3 (refill 1, steps restored), DOWN×5 to goal at gc=2,gr=8
+
+**Step verification:**
+- After move 17 (hit #1): 42-34=8 steps
+- After move 19: 4 steps
+- Move 20 (refill 2): steps→42
+- After move 25 (hit #3): 32 steps
+- After move 39: 4 steps
+- Move 40 (refill 1): steps→42
+- Move 45 (goal): 32 steps remaining ✓
+
+```json
+[4, 1, 1, 1, 1, 1, 1, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2]
+```
+
+============================================================
+LEVEL 3
+============================================================
+(no response)

@@ -1,0 +1,12 @@
+The agent's solver confirmed the same findings - it reached position (10,6) at distance 36 from the goal but couldn't cross the horizontal gap within the timeout. The `copy.deepcopy` bottleneck (~5ms per state) limits the search to ~200 iterations/second, making the ~150-step solution unreachable by brute force.
+
+**Final summary for all 6 levels:**
+
+| Level | Status | Actions | Key Mechanics |
+|-------|--------|---------|---------------|
+| 1 | **Solved** | 20 | Bridge toggles (buttons a, b) |
+| 2 | **Solved** | 42 | Bridge toggles, zbhi pickup, itki teleporter |
+| 3 | **Solved** | 45 | Multiple bridge toggles, itki teleporter, zbhi |
+| 4 | **Solved** | 62 | Cycling vckz gates, qgdz sliding bars, itki |
+| 5 | **Solved** | 110 | Standard crane repositioning, itki teleporter, vckz/qgdz cycling, double-toggle button d |
+| 6 | **Unsolved** | ~190 est. | hhxvnxhz crane on path grid, pressure plates, itki color-cycling, qgdz staircase, bridge repositioning |

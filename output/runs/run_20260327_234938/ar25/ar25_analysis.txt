@@ -1,0 +1,59 @@
+All 8 levels verified with assertions passing. Here are the solutions:
+
+---
+
+## Level 1 (15 moves)
+**Setup:** Fixed vertical mirror at x=10. Move piece `qdwjaukgpe` from (6,5) to (1,15).
+
+```json
+[3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 2 (11 moves)
+**Setup:** Move vertical mirror from x=12 to x=10. Move piece `noaqoztjku` down from (15,6) to (15,14).
+
+```json
+[3, 3, 5, 2, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 3 (40 moves)
+**Setup:** Move horizontal mirror from y=16 to y=9. Place `jewbedvusb` at (3,14), `jidgddyrxm` at (11,14). Reflections across y=9 cover all target pairs.
+
+```json
+[1, 1, 1, 1, 1, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2]
+```
+
+## Level 4 (29 moves)
+**Setup:** Move horizontal mirror from y=3 to y=9. Place `hylzmztfzg` at (11,6) and `ucyadwewwc` at (13,3). Cross-shaped reflection pattern.
+
+```json
+[2, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 5 (28 moves)
+**Setup:** Two mirrors: horizontal y=5→9, vertical x=3→8. Place `sezinyfuyf` at (4,5). 4-fold symmetry covers all 23 targets.
+
+```json
+[2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 6 (53 moves)
+**Setup:** Two mirrors: horizontal y=0→11, vertical x=7→6. Place `bdahvvicge` at (7,15) and `jsfvegkkzt` at (2,12). 4-fold reflections cover all 52 targets.
+
+```json
+[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 5, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2]
+```
+
+## Level 7 (37 moves)
+**Setup:** Two mirrors: horizontal y=5→7, vertical x=3→12. Place `hfkrronohx` at (8,10) and `xusbtwzcmm` at (15,1). Mixed 4-fold and diagonal symmetry covers all 42 targets.
+
+```json
+[2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 1, 1, 1, 1, 1, 1, 5, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 8 (47 moves)
+**Setup:** Two mirrors: horizontal y=5→11, vertical x=3→12. Place `tsjkpdckto` at (16,3) and `ujqxnvjoap` at (4,6). 4-fold reflections cover all 61 targets.
+
+```json
+[2, 2, 2, 2, 2, 2, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1]
+```

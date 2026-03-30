@@ -1,0 +1,213 @@
+============================================================
+SOURCE CODE ANALYSIS
+============================================================
+Here's how the game works and how to win each level:
+
+## Game Mechanics
+
+**Grid:** 64x64 with a 10x10 canvas (`xytrjjbyib`) and a 10x10 target pattern (`eoqnvkspoa-pqwmeN-1`).
+
+**Actions:**
+- **ACTION1-4**: Move the basket around 8 positions on a 3x3 grid (center blocked)
+- **ACTION5**: Throw — the basket animates outward, paints a region of the canvas, then retracts
+- **ACTION6**: Click — either select a color picker or trigger a door mechanism
+
+**8 basket positions** (mapped on a 3x3 grid, center excluded):
+```
+ pos7(0,0)  pos0(0,1)  pos1(0,2)
+ pos6(1,0)    [X]      pos2(1,2)
+ pos5(2,0)  pos4(2,1)  pos3(2,2)
+```
+
+**What each throw paints:**
+| Position | Type | Paints |
+|----------|------|--------|
+| 0 (top) | horizontal | rows 0-4, all cols |
+| 4 (bottom) | horizontal | rows 5-9, all cols |
+| 6 (left) | horizontal | all rows, cols 0-4 |
+| 2 (right) | horizontal | all rows, cols 5-9 |
+| 7 (top-left) | diagonal | row i → cols 0 to (9-i) |
+| 1 (top-right) | diagonal | row i → cols i to 9 |
+| 3 (bottom-right) | diagonal | row i → cols (9-i) to 9 |
+| 5 (bottom-left) | diagonal | row i → cols 0 to i |
+
+**Door (levels 3-6 only):** Clicking the `ctwspzkygu` sprite paints a small block:
+- pos 0: rows 0-2, cols 3-6
+- pos 2: rows 3-6, cols 7-9
+- pos 4: rows 7-9, cols 3-6
+- pos 6: rows 3-6, cols 0-2
+
+**Win condition:** Canvas matches target at all positions **except** the two diagonals `(i,i)` and `(i,9-i)`.
+
+**Start state:** Canvas all black (0), color=15 (white), basket at pos 0, 100-action limit.
+
+---
+
+## Level 1 — 5 actions
+
+**Target:** Top half black (0), bottom half white (15).
+
+Canvas starts all-0, so just paint bottom half white:
+1. Navigate pos0→pos4 (4 moves): `ACTION4, ACTION2, ACTION2, ACTION3`
+2. `ACTION5` — throw with default color 15 → rows 5-9 = 15
+
+---
+
+## Level 2 — 6 actions
+
+**Target:** Upper-left triangle = 15, lower-right anti-diagonal triangle = 12, lower-left = 0.
+
+1. `ACTION5` — throw from pos 0 with default 15 → rows 0-4 = 15
+2. `ACTION6` — click 12 picker
+3. Navigate pos0→pos3 (3 moves): `ACTION4, ACTION2, ACTION2`
+4. `ACTION5` — throw from pos 3 with 12 → anti-diagonal right triangle overwrites right/bottom with 12, lower-left stays 0
+
+---
+
+## Level 3 — 16 actions
+
+**Target:** Left sector=15, right sector=14, bottom sector=8, door block=12.
+
+**Paint order** (later overwrites earlier):
+1. Left half with 8 (pos 6)
+2. Right half with 14 (pos 2)
+3. Upper-left triangle with 15 (pos 7) — carves out 15 region, leaving 8 only in bottom sector
+4. Door at pos 0 with 12 — paints rows 0-2, cols 3-6
+
+**Sequence:**
+1. `ACTION6` click 14 picker
+2. `ACTION4, ACTION2` → pos 2
+3. `ACTION5` throw (right half = 14)
+4. `ACTION6` click 8 picker
+5. `ACTION1, ACTION3, ACTION3, ACTION2` → pos 6 (4 moves)
+6. `ACTION5` throw (left half = 8)
+7. `ACTION6` click 15 picker
+8. `ACTION1` → pos 7
+9. `ACTION5` throw (upper-left triangle = 15)
+10. `ACTION6` click 12 picker
+11. `ACTION4` → pos 0
+12. `ACTION6` click door at pos 0 (12 paint) → **win**
+
+---
+
+## Level 4 — 14 actions
+
+**Target:** Left half=9, right top=12 triangle, right bottom=15, door at pos6=11.
+
+**Paint order:**
+1. Right half with 12 (pos 2)
+2. Anti-diagonal right triangle with 15 (pos 3) — overwrites lower-right portion of 12
+3. Left half with 9 (pos 6) — cleans up any diagonal bleed into cols 0-4
+4. Door at pos 6 with 11 — paints rows 3-6, cols 0-2
+
+**Sequence:**
+1. `ACTION6` click 12 picker
+2. `ACTION4, ACTION2` → pos 2
+3. `ACTION5` throw (right half = 12)
+4. `ACTION6` click 15 picker
+5. `ACTION2` → pos 3
+6. `ACTION5` throw (anti-diagonal right = 15)
+7. `ACTION6` click 9 picker
+8. `ACTION3, ACTION3, ACTION1` → pos 6 (3 moves)
+9. `ACTION5` throw (left half = 9)
+10. `ACTION6` click 11 picker
+11. `ACTION6` click door at pos 6 (11 paint) → **win**
+
+---
+
+## Level 5 — 16 actions
+
+**Target:** Left sector=14, right sector=12, top sector edges=9, door=8.
+
+**Paint order:**
+1. Top half with 9 (pos 0)
+2. Lower-left triangle with 14 (pos 5)
+3. Anti-diagonal right triangle with 12 (pos 3) — fixes overlap between 14 triangle and right sector
+4. Door at pos 0 with 8 — paints rows 0-2, cols 3-6
+
+**Sequence:**
+1. `ACTION6` click 9 picker
+2. `ACTION5` throw from pos 0 (top half = 9)
+3. `ACTION6` click 14 picker
+4. `ACTION3, ACTION2, ACTION2` → pos 5 (3 moves)
+5. `ACTION5` throw (lower-left triangle = 14)
+6. `ACTION6` click 12 picker
+7. `ACTION4, ACTION4` → pos 3 (2 moves)
+8. `ACTION5` throw (anti-diagonal right = 12)
+9. `ACTION6` click 8 picker
+10. `ACTION1, ACTION1, ACTION3` → pos 0 (3 moves)
+11. `ACTION6` click door at pos 0 (8 paint) → **win**
+
+---
+
+## Level 6 — 16 actions
+
+**Target:** Left sector=8, right sector=14, bottom sector=0, door@pos0=15, door@pos6=11.
+
+**Key insight:** Canvas starts all-0, so the bottom sector (which needs 0) doesn't need painting.
+
+**Paint order:**
+1. Right half with 14 (pos 2)
+2. Upper-left triangle with 8 (pos 7) — leaves bottom-left as 0
+3. Door at pos 0 with 15
+4. Door at pos 6 with 11
+
+**Sequence:**
+1. `ACTION6` click 14 picker
+2. `ACTION4, ACTION2` → pos 2
+3. `ACTION5` throw (right half = 14)
+4. `ACTION6` click 8 picker
+5. `ACTION1, ACTION3, ACTION3` → pos 7 (3 moves)
+6. `ACTION5` throw (upper-left triangle = 8)
+7. `ACTION6` click 15 picker
+8. `ACTION4` → pos 0
+9. `ACTION6` click door at pos 0 (15 paint)
+10. `ACTION6` click 11 picker
+11. `ACTION3, ACTION2` → pos 6 (2 moves)
+12. `ACTION6` click door at pos 6 (11 paint) → **win**
+
+============================================================
+LEVEL 1
+============================================================
+Now I understand the game. Let me analyze Level 1.
+
+**Game Mechanics (cd82):** This is a painting game with 6 actions:
+- ACTION1-4: Move basket on a 3x3 grid (UP/DOWN/LEFT/RIGHT)
+- ACTION5: Throw (paint the canvas from current position)
+- ACTION6: Click (select color or trigger door)
+
+**Level 1 Target:** Top half black (0), bottom half white (15).
+
+**Current State:** Canvas starts all black, color = 15 (white), basket at pos0 (top center of 3x3 grid).
+
+**Basket positions:**
+```
+pos7(0,0)  pos0(0,1)  pos1(0,2)
+pos6(1,0)    [X]      pos2(1,2)
+pos5(2,0)  pos4(2,1)  pos3(2,2)
+```
+
+**Strategy:** Navigate from pos0 to pos4 (bottom center), then throw to paint rows 5-9 white.
+
+**Path:** pos0(0,1) → RIGHT → pos1(0,2) → DOWN → pos2(1,2) → DOWN → pos3(2,2) → LEFT → pos4(2,1) → THROW
+
+**Move sequence:**
+
+```json
+[4, 2, 2, 3, 5]
+```
+
+**Important caveat:** The harness (`harness.py:210-214`) only maps actions 1-4 to `GameAction.ACTION1-4`. Action 5 (throw) is **not mapped**, so `game_action_map.get(5)` returns `None` and the throw will be skipped. The harness needs to be updated to support actions 5 and 6 for this game:
+
+```python
+game_action_map = {
+    1: GameAction.ACTION1,
+    2: GameAction.ACTION2,
+    3: GameAction.ACTION3,
+    4: GameAction.ACTION4,
+    5: GameAction.ACTION5,  # throw
+    6: GameAction.ACTION6,  # click
+}
+```
+
+Want me to update the harness to support all 6 actions?

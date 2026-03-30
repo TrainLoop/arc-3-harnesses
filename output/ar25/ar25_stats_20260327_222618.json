@@ -1,0 +1,23 @@
+{
+  "game_id": "ar25-e3c63847",
+  "timestamp": "20260327_222618",
+  "levels_solved": 1,
+  "total_levels": 8,
+  "analysis_time_seconds": 1108.0,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 15,
+      "time_seconds": 446.4,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": false,
+      "moves": 0,
+      "time_seconds": 473.7,
+      "reason": "moves exhausted"
+    }
+  ]
+}

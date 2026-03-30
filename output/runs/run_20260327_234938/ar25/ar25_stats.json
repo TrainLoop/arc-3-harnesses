@@ -1,0 +1,65 @@
+{
+  "game_id": "ar25-e3c63847",
+  "timestamp": "20260328_033344",
+  "levels_solved": 8,
+  "total_levels": 8,
+  "analysis_time_seconds": 1338.5,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 15,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": true,
+      "moves": 11,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 3,
+      "solved": true,
+      "moves": 40,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 4,
+      "solved": true,
+      "moves": 29,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 5,
+      "solved": true,
+      "moves": 28,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 6,
+      "solved": true,
+      "moves": 53,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 7,
+      "solved": true,
+      "moves": 37,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 8,
+      "solved": true,
+      "moves": 47,
+      "time_seconds": 0,
+      "reason": "solved"
+    }
+  ]
+}

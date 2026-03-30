@@ -1,0 +1,153 @@
+============================================================
+SOURCE CODE ANALYSIS
+============================================================
+Now I have a thorough understanding of the game. Here's my analysis:
+
+---
+
+## Game dc22 Overview
+
+This is a **puzzle-platformer** where you move a **pink 2x2 player** (`rpygrnbjhwj1`, color 14) to reach a **yellow 2x2 goal** (`bqxa`, color 11). The win condition (`uhqbwfdkff` at line 2933) is simply: player position == goal position.
+
+**Controls:**
+- Actions 1-4: Move UP/DOWN/LEFT/RIGHT (2 pixels per step, `qqsswktiui=2`)
+- Action 6: **Click** on UI elements (buttons, crane controls)
+
+**Core Mechanics:**
+- **Platforms** (`kbqq-efzv`): Red (color 2) floor tiles the player walks on
+- **wbze (bridges)**: Multi-variant terrain pieces. Each has a numbered suffix (1, 2). Only one variant is active at a time; the rest are REMOVED
+- **jpug (buttons)**: Colored clickable buttons on the right side. Each has a single-letter tag (a/b/c/d) that controls which group of sprites it toggles
+- **Falling**: If the player steps off a platform (no `itki` sprite underneath), they lose **20 steps** and reset to checkpoint
+- **Step counter**: Each level has a limited budget. Each move costs 1 step
+
+---
+
+## Level-by-Level Strategy
+
+### Level 1 (128 steps)
+- **Player**: (10, 30) | **Goal**: (24, 10)
+- **Buttons**: `jpug-bgeg` at (42,7) [tag "a"], `jpug-jbyz` at (42,24) [tag "b"]
+- **Bridges**: `wbze-efzv1` at (8,24) and `wbze-efzv2` at (18,10) — both tagged "a"
+
+**Strategy**: Click `jpug-bgeg` (the "a" button) to toggle the bridge configuration, creating a passable path from the player's starting area upward/rightward to the goal. Navigate UP and RIGHT across the reconfigured bridges to reach (24, 10).
+
+### Level 2 (192 steps)
+- **Player**: (6, 22) | **Goal**: (22, 4)
+- **Buttons**: `jpug-bjuk` [tag "c"], `jpug-invis-bgeg` [tag "a", initially hidden], `jpug-jbyz` [tag "b"]
+- **Key**: `zbhi-jpug-bgeg` at (16, 45) — walk over it to reveal the hidden "a" button
+- **Bridges**: `hhxv1` at (12,8), `hhxv-upry1` at (8,24), plus wbze segments
+
+**Strategy**: 
+1. Navigate down to (16, 45) to collect the key, which reveals the hidden `jpug-invis-bgeg` button
+2. Click the "c" button (`jpug-bjuk`) and "a" button to toggle bridges into the right configuration
+3. Navigate upward through the reconfigured path to reach (22, 4)
+
+### Level 3 (192 steps)
+- **Player**: (30, 10) | **Goal**: (32, 30)
+- **Buttons**: `jpug-adnw` [tag "d", hidden], `jpug-bgeg` [tag "a"], `jpug-bjuk` [tag "c"], `jpug-jbyz` [tag "b"]
+- **Key**: `zbhi-jpug-adnw` at (16, 34) — reveals the "d" button
+- **itki tiles**: Color-cycling tiles at (6,8) and (12,38)
+- **Bridges**: Multiple wbze segments including a pressure-plate-gated one (`wbze-efzv-p-1`)
+
+**Strategy**:
+1. Click "a" button to toggle bridges, creating a downward path
+2. Navigate down and left to collect the key at (16, 34), revealing the "d" button
+3. Click buttons in the right sequence to cycle bridges and itki tiles, opening a path to (32, 30)
+4. The itki tiles act as teleport anchors — when you click a button, if you're standing on an itki tile, you teleport to the matching tile
+
+### Level 4 (192 steps)
+- **Player**: (4, 10) | **Goal**: (30, 36)
+- **Buttons**: `jpug-bjuk` [tag "c"], `vckz-jpug` [tag with click handler]
+- **itki tiles**: at (18,24) and (4,16)
+- **vckz sprites**: Special interactive elements at (8,12) and (16,32)
+
+**Strategy**:
+1. Click the "c" button to toggle terrain
+2. Use the vckz-jpug control to manipulate additional terrain
+3. Navigate right and downward, using itki tile teleportation when standing on matching tiles and clicking buttons
+4. Reach goal at (30, 36)
+
+### Level 5 (512 steps) — Introduces the Crane
+- **Player**: (32, 34) | **Goal**: (10, 50)
+- **Crane** (`nxhz`): at (2, 24) with 5 control buttons:
+  - `zmjbupyjfyb`: crane UP
+  - `jffakyxiury`: crane DOWN
+  - `vbdduyutyiw`: crane LEFT
+  - `ghqmfnmmgrz`: crane RIGHT
+  - `bynyvtuepbt`: GRAB/ATTACH object
+- **Key**: `zbhi-jpug-adnw` at (10, 18)
+
+**Strategy**:
+1. Use the jpug buttons to toggle bridges and create an initial path
+2. Navigate to collect the key at (10, 18)
+3. Use the crane controls (click the directional arrows) to position the crane over bridge pieces
+4. Click the grab button (`bynyvtuepbt`) to pick up a bridge piece, then use directional buttons to move it to a new location, building a path to (10, 50)
+5. The crane moves on a grid (4 pixels per step). Allowed crane positions depend on the path layout
+
+### Level 6 (1024 steps) — Most Complex
+- **Player**: (28, 52) | **Goal**: (46, 6) (uses `bqxa-ppew`)
+- **Crane** (`hhxvnxhz`): at (22, 30) — this variant can **pick up hhxv bridge pieces**
+- **Pressure plates**: `sprite_81` variants at (32,58), (34,56), (36,58), (34,60) — standing on them reveals associated buttons
+- **itki color-cycling tiles**: `itkiupry1` at (18,48), `itkiupry2` at (32,52), `itkijbyz2` at (34,58), `itkizfrq2` at (4,4)
+- **Color cycle button**: `gkrr-jpug` at (49,46) tagged `itki-color-jpug` — clicking cycles all itki tiles through the color sequence (upry→bgeg→zfrq→jbyz→upry...)
+- **bg path tiles**: Many 4x4 black tiles forming a walkable grid area
+- **hhxv-dmxj1** bridge at (0, 24)
+
+**Strategy**:
+1. From (28, 52), navigate to pressure plates to reveal hidden buttons
+2. Use the color-cycle button (`gkrr-jpug`) to cycle itki tiles — different colors make them collidable/passable, gating different paths
+3. Use the crane to grab bridge piece `hhxv-dmxj1` and reposition it to create a path across the gap
+4. Click `jpug-bjuk` (tag "c") to toggle additional bridge segments  
+5. Collect keys (`zbhi-jpug-adnw-1`, `zbhi-jpug-bgeg-1`) to reveal more buttons
+6. The ultimate path goes from the bottom-left area up and right to the goal at (46, 6)
+7. Careful step management is critical — 1024 steps sounds generous but the crane operations and bridge rearrangement consume many steps
+
+---
+
+**General Tips:**
+- Each button click + failed movement costs a step, so plan ahead
+- Falling off a platform costs **20 steps** — avoid falling
+- Action 6 (click) needs `x, y` in display coordinates, which get converted to game coordinates
+- The checkpoint system (`xcrifaqaiy`) saves state before click actions, so falling resets you to the last click's state
+- itki teleportation: if you're standing on an itki tile when clicking a letter button, you teleport to the next matching itki tile
+
+============================================================
+LEVEL 1
+============================================================
+Level 1 is solved! But it **requires button clicks (action 6)**, which the current harness doesn't support.
+
+Here's the verified solution (15 total actions):
+
+**Full sequence:**
+1. **Click button "b"** (display coords x=45, y=34) — creates bridge at y=24-27
+2. **5x UP** — walk through bridge: (10,30)→(10,28)→(10,26)→(10,24)→(10,22)→(10,20)
+3. **5x RIGHT** — cross platform: (10,20)→(12,20)→(14,20)→(16,20)→(18,20)→(20,20)
+4. **Click button "b" again** (display x=45, y=34) — restore floor at (18-21, 10-13)
+5. **Click button "a"** (display x=45, y=17) — create vertical bridge at x=18-21, y=14-23
+6. **5x UP** — descend to goal row: (20,20)→(20,18)→(20,16)→(20,14)→(20,12)→(20,10)
+7. **2x RIGHT** — reach goal: (20,10)→(22,10)→(24,10) **= WIN**
+
+The directional-only portion is:
+
+```json
+[1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 4, 4]
+```
+
+But the 3 clicks must be interleaved. The harness needs modification to support action 6 with coordinate data. Here's what the harness `game_action_map` would need:
+
+```python
+game_action_map = {
+    1: GameAction.ACTION1,
+    2: GameAction.ACTION2,
+    3: GameAction.ACTION3,
+    4: GameAction.ACTION4,
+    6: GameAction.ACTION6,  # needs data: {"x": ..., "y": ...}
+}
+```
+
+The full action sequence with click markers would be:
+```
+CLICK_B, UP, UP, UP, UP, UP, RIGHT, RIGHT, RIGHT, RIGHT, RIGHT, CLICK_B, CLICK_A, UP, UP, UP, UP, UP, RIGHT, RIGHT
+```
+
+Want me to update the harness to support click actions so this can run end-to-end?

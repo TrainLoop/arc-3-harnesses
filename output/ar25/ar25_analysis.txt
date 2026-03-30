@@ -1,0 +1,75 @@
+Now I have the full picture. Here's the analysis:
+
+## Game Mechanics (ar25)
+
+This is a **mirror/reflection puzzle**. The core elements:
+
+| Element | Sprite | Role |
+|---|---|---|
+| **Movable pieces** | Various color-5 shapes (tagged `gljpmsnsnx`) | Position these on the grid |
+| **Vertical mirror** | `zxikvwjsyl` (color-10 column) | Reflects pixels across x-axis: `new_x = 2*mirror.x - x` |
+| **Horizontal mirror** | `ezdsyuixsn` (color-10 row) | Reflects pixels across y-axis: `new_y = 2*mirror.y - y` |
+| **Targets** | `vrfjzqaker` (color-11 single pixels) | Must ALL be covered by piece pixels or their reflections |
+| **Step counter** | Per-level budget | Every move costs 1 step; run out = lose |
+
+**Actions**: UP(1), DOWN(2), LEFT(3), RIGHT(4), CYCLE_SELECTION(5), CLICK(6), UNDO(7)
+
+**Win condition**: Every target cell is covered by either an original piece pixel or a reflected pixel (reflections cascade via BFS up to depth 12, so a point can bounce between mirrors creating 4-fold symmetry).
+
+**Mirror constraints**: Vertical mirrors can only move left/right. Horizontal mirrors can only move up/down.
+
+---
+
+## Level-by-Level Strategy
+
+### Level 1 (budget: 64 steps)
+- **Setup**: 1 piece (`qdwjaukgpe`, an L-shape), 1 **fixed** vertical mirror at x=10, 5 targets
+- **Targets**: (19,15), (18,15), (17,15), (17,16), (17,17)
+- **Strategy**: The mirror is immovable. Move the piece so its reflection across x=10 covers all targets.
+- **Solution**: Move piece from (6,5) to **(1, 15)** — left 5, down 10 (15 moves). The L-shape reflected across x=10 lands exactly on the target pattern.
+
+### Level 2 (budget: 64 steps)
+- **Setup**: 1 piece (`noaqoztjku`, a Z/S-shape), 1 **movable** vertical mirror (starts at x=12), 8 targets
+- **Targets form a Z-shape**: (3,14)(4,14)(5,14), (3,15), (3,16), (1,17)(2,17)(3,17)
+- **Strategy**: Move the mirror left and the piece down so the reflection matches the target pattern.
+- **Solution**: Move piece from (15,6) down to **(15, 14)** (8 moves). Move mirror from x=12 to **x=10** (2 moves). The reflected Z-shape covers all 8 targets. ~12 total moves including selection switches.
+
+### Level 3 (budget: 128 steps)
+- **Setup**: 2 pieces (`jewbedvusb` at (15,9), `jidgddyrxm` at (4,7)), 1 **movable** horizontal mirror, ~28 targets
+- **Targets cluster** in two symmetric groups: one around y=1-4 and one around y=14-17
+- **Strategy**: Position both pieces and the horizontal mirror so that each piece's reflection across the horizontal axis covers the opposing cluster of targets. The two pieces each have their own target group — one piece covers targets on one side, its reflection covers targets on the other.
+- **Key**: Move the horizontal mirror to the y-midpoint between the two target clusters (~y=9 or y=10), then position each piece so it (or its reflection) covers its assigned targets.
+
+### Level 4 (budget: 128 steps)
+- **Setup**: 2 pieces (`hylzmztfzg` at (4,6), `ucyadwewwc` at (6,10)), 1 horizontal mirror, 1 fixed(?) horizontal mirror, ~25 targets
+- **Targets** cluster around two symmetric groups (around y=3-8 and y=10-15)
+- **Strategy**: Similar to Level 3 — position the horizontal mirror at the axis of symmetry between target groups, then place pieces so their reflections fill in the opposing side.
+
+### Level 5 (budget: 128 steps) — **Two mirrors introduced**
+- **Setup**: 1 piece (`sezinyfuyf`), **both** a vertical mirror (`zxikvwjsyl` at x=3) and horizontal mirror (`ezdsyuixsn` at y=5), many targets
+- **Key mechanic**: With two mirrors, reflections cascade — a pixel reflects across mirror A, then that reflection reflects across mirror B, creating **4-fold symmetry** (original + horizontal flip + vertical flip + 180-degree rotation).
+- **Strategy**: Position the mirrors and piece so the 4-fold reflected pattern covers all targets. The piece only needs to be in one quadrant — the reflections fill the other three.
+
+### Level 6 (budget: 320 steps)
+- **Setup**: 2 pieces (`bdahvvicge` at (14,3), `jsfvegkkzt` at (17,8)), both mirrors, ~54 targets
+- **Strategy**: With two mirrors and two pieces, you get massive coverage via 4-fold symmetry. Position each piece in one region and let reflections cascade across both axes. The large step budget (320) gives room to fine-tune positions.
+
+### Level 7 (budget: 320 steps)
+- **Setup**: 2 pieces (`hfkrronohx` at (5,16), `xusbtwzcmm` at (17,13)), both mirrors, ~44 targets
+- **Strategy**: Same 4-fold symmetry approach. The two pieces are irregular shapes — their cascading reflections across both axes must tile over all target positions.
+
+### Level 8 (budget: 320 steps)
+- **Setup**: 2 pieces (`tsjkpdckto` at (7,7), `ujqxnvjoap` at (13,13)), both mirrors, ~56 targets
+- **Targets** form 4 distinct clusters (one per quadrant, resembling the same shape reflected).
+- **Strategy**: Position mirrors at the axes of symmetry between the quadrants, place each piece to cover one cluster, and let 4-fold reflections cover the rest. The two pieces appear to be mirror images of each other, reinforcing this approach.
+
+---
+
+## General Winning Principles
+
+1. **Identify the target symmetry** — targets are always arranged with reflective symmetry matching the available mirrors.
+2. **Position mirrors at the axis of symmetry** between target clusters.
+3. **Place pieces so original pixels cover one cluster** — reflections automatically fill the symmetric counterparts.
+4. **Use ACTION5 (cycle) or ACTION6 (click)** to switch between selecting pieces vs. mirrors.
+5. **Use ACTION7 (undo)** if you make a wrong move — no step cost.
+6. **In 2-mirror levels**, you only need to fill one quadrant; the cascade fills the other three.

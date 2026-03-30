@@ -1,0 +1,23 @@
+{
+  "game_id": "cn04-65d47d14",
+  "timestamp": "20260328_042603",
+  "levels_solved": 1,
+  "total_levels": 5,
+  "analysis_time_seconds": 1320.9,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 9,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": false,
+      "moves": 0,
+      "time_seconds": 0,
+      "reason": "no moves parsed"
+    }
+  ]
+}

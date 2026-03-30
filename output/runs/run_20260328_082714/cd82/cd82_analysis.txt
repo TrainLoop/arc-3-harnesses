@@ -1,0 +1,138 @@
+Now I have a full understanding of the game. Let me analyze the mechanics and solve each level.
+
+## Game Mechanics Analysis
+
+**Canvas**: 10x10 grid (`xytrjjbyib`) starting all black (0). Goal: match the target pattern (`eoqnvkspoa-pqwmeN-1`) at all positions EXCEPT the two diagonals (main + anti).
+
+**Basket System**: 8 positions around a 3x3 ring (excluding center):
+```
+7(0,0)  0(0,1)  1(0,2)
+6(1,0)  [XXX]   2(1,2)
+5(2,0)  4(2,1)  3(2,2)
+```
+- Actions 1-4 (U/D/L/R) move the basket on this ring; center (1,1) is blocked.
+- ACTION5 launches the basket, painting a region of the canvas with the current color.
+- ACTION6 clicks: select color buttons (`pqkenviek`) or trigger gates (`ctwspzkygu`).
+
+**Painting regions (ACTION5)**:
+| Position | Type | Paints |
+|----------|------|--------|
+| 0 (top) | horizontal | rows 0-4, all cols |
+| 4 (bottom) | horizontal | rows 5-9, all cols |
+| 6 (left) | horizontal | all rows, cols 0-4 |
+| 2 (right) | horizontal | all rows, cols 5-9 |
+| 7 (upper-left) | diagonal | row i: cols 0..9-i |
+| 1 (upper-right) | diagonal | row i: cols i..9 |
+| 5 (lower-left) | diagonal | row i: cols 0..i |
+| 3 (lower-right) | diagonal | row i: cols 9-i..9 |
+
+**Gates** (levels 3-6 only, at positions 0/2/4/6):
+| Gate pos | Paints |
+|----------|--------|
+| 0 | rows 0-2, cols 3-6 |
+| 2 | rows 3-6, cols 7-9 |
+| 4 | rows 7-9, cols 3-6 |
+| 6 | rows 3-6, cols 0-2 |
+
+**Display coords = grid coords** (64x64 grid on 64x64 display, scale=1, offset=0).
+
+---
+
+## Level 1
+
+**Target**: Top half (rows 0-4) = 0 (black), bottom half (rows 5-9) = 15 (white).
+
+**Strategy**: Navigate to pos 4 (bottom), paint with color 15 (default).
+
+**Route**: pos 0→1→2→3→4 = RIGHT, DOWN, DOWN, LEFT, then ACTION5.
+
+```json
+[4, 2, 2, 3, 5]
+```
+
+---
+
+## Level 2
+
+**Target**: Upper-left triangle = 15, lower-right triangle = 12, lower-left = 0 (unchanged).
+
+**Strategy**:
+1. Paint pos 0 (top half) with 15 (default) - already at pos 0
+2. Select color 12 (button at grid 44,2 → click center 46,4), navigate to pos 3, paint
+
+**Route**: ACTION5, click 12, RIGHT→DOWN→DOWN to pos 3, ACTION5.
+
+```json
+[5, [6, 46, 4], 4, 2, 2, 5]
+```
+
+---
+
+## Level 3
+
+**Target** (4 regions excluding diagonals): LEFT=15, RIGHT=14, BOTTOM=8(left)/14(right), TOP=15 with 12 block at rows 0-2 cols 3-6 (gate).
+
+Color buttons: 0@(21,2), 15@(27,2), 12@(33,2), 11@(39,2), 14@(45,2), 8@(51,2), 9@(57,2).
+
+**Strategy**:
+1. Paint pos 7 (upper-left) with 15 → fills TOP+LEFT
+2. Paint pos 5 (lower-left) with 8 → overwrites lower-left triangle
+3. Paint pos 2 (right half) with 14 → overwrites cols 5-9 (fixes BOTTOM right)
+4. Paint pos 7 (upper-left) with 15 → restores LEFT to 15
+5. Click gate pos 0 with 12 → paints rows 0-2, cols 3-6
+
+**Gate at pos 0**: grid position (29,18), click center (31,20).
+
+```json
+[3, 5, 2, 2, [6, 53, 4], 5, 4, 4, 1, [6, 47, 4], 5, 1, 3, 3, [6, 29, 4], 5, 4, [6, 35, 4], [6, 31, 20]]
+```
+
+---
+
+## Level 4
+
+**Target** (4 regions): LEFT = cols 0-4 mostly 9 with 11 block at rows 3-6 cols 0-2 (gate), RIGHT+BOTTOM = 15 (via lower-right triangle), TOP = 12 in upper-right triangle area.
+
+**Strategy**:
+1. Paint pos 1 (upper-right) with 12
+2. Paint pos 3 (lower-right) with 15
+3. Paint pos 6 (left half) with 9
+4. Click gate pos 6 with 11
+
+**Gate at pos 6**: grid position (11,36), click center (13,39).
+
+```json
+[[6, 35, 4], 4, 5, [6, 29, 4], 2, 2, 5, [6, 59, 4], 3, 3, 1, 5, [6, 41, 4], [6, 13, 39]]
+```
+
+---
+
+## Level 5
+
+**Target**: LEFT=14, RIGHT=12, BOTTOM=12, TOP=9 with 8 block at rows 0-2 cols 3-6 (gate).
+
+**Strategy** (order matters - later paints overwrite earlier):
+1. Paint pos 1 (upper-right) with 9
+2. Paint pos 5 (lower-left) with 14
+3. Paint pos 3 (lower-right) with 12 → overwrites BOTTOM right to 12
+4. Click gate pos 0 with 8
+
+```json
+[[6, 59, 4], 4, 5, [6, 47, 4], 2, 2, 3, 3, 5, [6, 35, 4], 4, 4, 5, [6, 53, 4], 1, 1, 3, [6, 31, 20]]
+```
+
+---
+
+## Level 6
+
+**Target**: LEFT=8 with 11 block (gate pos 6), RIGHT=14, BOTTOM left=0/right=14, TOP=8 with 15 block (gate pos 0).
+
+**Strategy**:
+1. Paint pos 7 (upper-left) with 8 → fills TOP+LEFT with 8, leaves BOTTOM-left as 0
+2. Paint pos 2 (right half) with 14 → cols 5-9 = 14
+3. Click gate pos 6 with 11 → rows 3-6 cols 0-2 = 11
+4. Click gate pos 0 with 15 → rows 0-2 cols 3-6 = 15
+
+```json
+[[6, 53, 4], 3, 5, [6, 47, 4], 4, 4, 2, 5, [6, 41, 4], 2, 3, 3, 1, [6, 13, 39], [6, 29, 4], 1, 4, [6, 31, 20]]
+```

@@ -1,0 +1,44 @@
+{
+  "game_id": "cn04-65d47d14",
+  "timestamp": "20260328_142837",
+  "levels_solved": 5,
+  "total_levels": 5,
+  "analysis_time_seconds": 654.7,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 9,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": true,
+      "moves": 19,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 3,
+      "solved": true,
+      "moves": 20,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 4,
+      "solved": true,
+      "moves": 25,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 5,
+      "solved": true,
+      "moves": 35,
+      "time_seconds": 0,
+      "reason": "solved"
+    }
+  ]
+}

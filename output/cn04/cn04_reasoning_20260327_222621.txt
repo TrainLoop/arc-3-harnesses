@@ -1,0 +1,133 @@
+============================================================
+SOURCE CODE ANALYSIS
+============================================================
+This is a **connector puzzle game**. Each sprite has special **color-8 pixels** (connectors). You win a level when every color-8 pixel on every sprite overlaps with a color-8 pixel from another sprite (turning them green/color-3). You can move (up/down/left/right), rotate (90° CW), and click to select sprites. 150 action limit.
+
+Here's how to solve each level:
+
+---
+
+## Level 1 (2 sprites)
+**Sprites:** `vmgdxvpgkh` at (4,4) and `dzfylahsaw` at (12,9)
+
+`vmgdxvpgkh` is auto-selected (closest to origin). Its connectors are at its right edge; `dzfylahsaw`'s connectors are at its left edge. Slide them together:
+
+- **Move right 3, down 6** (9 actions)
+
+This aligns all 4 connectors at global positions (12,11) and (12,13).
+
+---
+
+## Level 2 (3 sprites)
+**Sprites:** `lejuhuvrjg` at (3,3), `grpgefeksy` at (4,11), `glojtydbea` at (12,4)
+
+`lejuhuvrjg` is auto-selected. `grpgefeksy` is the hub with 4 connectors — the other two each plug into it.
+
+1. **Move lejuhuvrjg down 6** (6 actions) → to (3,9)
+2. **Click glojtydbea** to select it (1 action)
+3. **Move glojtydbea left 4, down 8** (12 actions) → to (8,12)
+
+Connectors pair at (5,12), (4,14), (10,12), and (8,17). **Total: 19 actions.**
+
+---
+
+## Level 3 (3 sprites)
+**Sprites:** `hjqjqsmhmf` at (5,5), `gqxqpkuwab` at (11,4), `nhppemmlcd` at (9,11)
+
+`nhppemmlcd` is the hub with 4 connectors (top pair + bottom pair). The other two plug in, but `hjqjqsmhmf` needs rotation first to match the horizontal spacing.
+
+`hjqjqsmhmf` is auto-selected:
+
+1. **Rotate 90°** (1 action)
+2. **Move right 4, down 7** (11 actions) → to (9,12)
+3. **Click gqxqpkuwab** to select it (1 action)
+4. **Move left 2, down 5** (7 actions) → to (9,9)
+
+Connectors pair at (10,11), (12,11), (10,14), and (12,14). **Total: 20 actions.**
+
+---
+
+## Level 4 (3 rotated sprites)
+**Sprites:** `udepuflbbb` at (2,4) rot 90°, `ygyvhkssnz` at (9,9) rot 270°, `zhhaofpbyw` at (10,3) rot 90°
+
+`udepuflbbb` is auto-selected (stays put — it's the anchor). All three sprites form a triangle of connectors.
+
+1. **Click ygyvhkssnz** to select it (1 action)
+2. **Move left 4, up 5** (9 actions) → to (5,4)
+3. **Click zhhaofpbyw** to select it (1 action)
+4. **Move left 4, down 6** (10 actions) → to (6,9)
+
+Connectors pair at (6,4), (6,10), and (11,9). **Total: 21 actions.**
+
+---
+
+## Level 5 (4 sprites, hidden colors)
+**Sprites:** `supigciwwi` at (2,3) rot 90°, `oncjjftokv` at (5,15) rot 90°, `dnkiufrohe` at (11,6), `lxgvcnpsir` at (14,13)
+
+This level hides non-selected sprites (all shown as solid color-4). Two pairs need to overlap:
+- `dnkiufrohe` + `oncjjftokv` (both have horizontal connector spacing of 4)
+- `supigciwwi` + `lxgvcnpsir` (both have connector spacing of 5, but `lxgvcnpsir` needs a 90° rotation)
+
+`supigciwwi` is auto-selected (stays put):
+
+1. **Click oncjjftokv** to select it (1 action)
+2. **Move right 6, up 9** (15 actions) → to (11,6), overlapping `dnkiufrohe`
+3. **Click lxgvcnpsir** to select it (1 action)
+4. **Rotate 90°** (1 action)
+5. **Move left 12, up 5** (17 actions) → to (2,8), connectors align with `supigciwwi`
+
+Connectors pair at (11,6), (15,6), (2,8), and (7,8). **Total: 35 actions.**
+
+============================================================
+LEVEL 1
+============================================================
+## Level 1 Analysis
+
+**Sprites:**
+- `vmgdxvpgkh` at (4,4) — **auto-selected** (closest to origin: 4²+4²=32). This is the black/color-0 shape with connectors (color-8) on its right edge at global positions (9,5) and (9,7).
+- `dzfylahsaw` at (12,9) — the color-14 shape with connectors (color-8) on its left edge at global positions (12,11) and (12,13).
+
+**Goal:** Overlap all color-8 connector pixels between the two sprites.
+
+**Solution:** Move `vmgdxvpgkh` **right 3** (x: 4→7) then **down 6** (y: 4→10):
+- Connectors shift from (9,5)/(9,7) → (12,11)/(12,13), exactly matching `dzfylahsaw`'s connectors.
+
+All 9 moves stay within the 20×20 grid bounds.
+
+```json
+[4, 4, 4, 2, 2, 2, 2, 2, 2]
+```
+
+============================================================
+LEVEL 2
+============================================================
+Looking at Level 2, I need to understand the sprites and their connector positions.
+
+## Level 2 Analysis
+
+**3 Sprites:**
+- **`lejuhuvrjg`** at (3,3) — auto-selected (closest to origin). Connectors at local (2,3) and (1,5) → global (5,6) and (4,8)
+- **`grpgefeksy`** at (4,11) — the hub with 4 connectors at global (5,12), (10,12), (4,14), (8,17)
+- **`glojtydbea`** at (12,4) — connectors at global (14,4) and (12,9)
+
+**Goal:** Every color-8 pixel must overlap with a color-8 pixel from another sprite (4 pairs needed).
+
+## The Problem
+
+**This level cannot be solved with only actions 1-4.** It requires clicking (action 6) to select `glojtydbea` and move it separately. The harness only supports directional moves.
+
+The solution requires:
+
+1. **Move `lejuhuvrjg` down 6** → position (3,9). Its connectors land at (5,12) and (4,14), pairing with 2 of `grpgefeksy`'s connectors.
+2. **Click `glojtydbea`** to select it (action 6 — not supported by harness)
+3. **Move `glojtydbea` left 4, down 8** → position (8,12). Its connectors land at (10,12) and (8,17), pairing with `grpgefeksy`'s remaining 2 connectors.
+
+## Best-effort directional moves (first sprite only):
+
+```json
+[2, 2, 2, 2, 2, 2]
+```
+
+This moves `lejuhuvrjg` into position, connecting 2 of 4 required pairs. But without click support, the remaining 2 pairs (requiring `glojtydbea` to move) cannot be completed, and the level won't be solved.
+
+**To fix the harness**, you'd need to add action 6 support with x,y coordinates for sprite selection. The full sequence would then be: 6 DOWNs → click at grid (12,4) → 4 LEFTs + 8 DOWNs = **19 total actions**.

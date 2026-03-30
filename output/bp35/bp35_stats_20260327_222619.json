@@ -1,0 +1,16 @@
+{
+  "game_id": "bp35-0a0ad940",
+  "timestamp": "20260327_222619",
+  "levels_solved": 0,
+  "total_levels": 9,
+  "analysis_time_seconds": 474.0,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": false,
+      "moves": 0,
+      "time_seconds": 963.2,
+      "reason": "moves exhausted"
+    }
+  ]
+}

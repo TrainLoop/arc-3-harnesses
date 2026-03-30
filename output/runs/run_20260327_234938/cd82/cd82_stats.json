@@ -1,0 +1,23 @@
+{
+  "game_id": "cd82-fb555c5d",
+  "timestamp": "20260327_234947",
+  "levels_solved": 1,
+  "total_levels": 6,
+  "analysis_time_seconds": 1017.5,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 5,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": false,
+      "moves": 0,
+      "time_seconds": 0,
+      "reason": "moves exhausted"
+    }
+  ]
+}

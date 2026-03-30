@@ -1,0 +1,141 @@
+============================================================
+SOURCE CODE ANALYSIS & SOLUTIONS
+============================================================
+Now I have the full game source. Let me analyze the mechanics and solve each level.
+
+## Game Mechanics Summary
+
+**Grid**: 64x64. **Canvas** (`xytrjjbyib`): 10x10 at (27,34), starts all black (0).
+
+**Basket navigation**: 8 positions around the canvas on a 3x3 grid (center blocked):
+```
+     col0   col1   col2
+row0:  7(TL)  0(T)   1(TR)
+row1:  6(L)   (X)    2(R)
+row2:  5(BL)  4(B)   3(BR)
+```
+Arrow keys (1-4) move on this grid. Start: pos 0, color 15 (white).
+
+**ACTION5 (fire)**: Launches basket, paints canvas region:
+- Pos 0 (top): rows 0-4 | Pos 4 (bottom): rows 5-9
+- Pos 6 (left): cols 0-4 | Pos 2 (right): cols 5-9
+- Pos 1 (TR diag): row i, cols i..9 | Pos 3 (BR diag): row i, cols (9-i)..9
+- Pos 5 (BL diag): row i, cols 0..i | Pos 7 (TL diag): row i, cols 0..(9-i)
+
+**Small basket** (`ctwspzkygu`, levels 3-6, click via ACTION6):
+- Pos 0: rows 0-2, cols 3-6 | Pos 2: rows 3-6, cols 7-9
+- Pos 4: rows 7-9, cols 3-6 | Pos 6: rows 3-6, cols 0-2
+
+**Win condition**: Canvas must match target, **excluding both diagonals** (main and anti).
+
+**Color buttons** (click centers): Level 1-2 have 2-3 buttons; levels 3-6 have 7 buttons at:
+- 0→(23,4), 15→(29,4), 12→(35,4), 11→(41,4), 14→(47,4), 8→(53,4), 9→(59,4)
+
+**Small basket click coords**: Pos 0→(32,20), Pos 6→(13,39)
+
+---
+
+## Level 1
+
+**Target**: Top half = 0 (black, already default), bottom half = 15 (white).
+
+Paint bottom half (pos 4) with color 15 (already selected).
+
+Navigate 0→1→2→3→4: RIGHT, DOWN, DOWN, LEFT. Fire.
+
+```json
+[4, 2, 2, 3, 5]
+```
+
+---
+
+## Level 2
+
+**Target**: Upper-left = 15, lower-right triangle = 12, rest = 0.
+
+1. Fire from pos 0 with 15 → top half white
+2. Select color 12 (button at (44,2), click (46,4)), navigate to pos 3, fire → bottom-right triangle
+
+```json
+[5, [6, 46, 4], 4, 2, 2, 5]
+```
+
+---
+
+## Level 3
+
+**Target decomposition** (last paint wins, ignoring diagonals):
+1. BL diagonal (pos 5) with **8** → lower-left triangle
+2. Right half (pos 2) with **14** → right side
+3. TL diagonal (pos 7) with **15** → upper-left area
+4. Small top basket (pos 0) with **12** → rows 0-2, cols 3-6
+
+Sequence:
+- Select 8, nav to pos 5 (LEFT,DOWN,DOWN), fire
+- Select 14, nav to pos 2 (RIGHT,RIGHT,UP), fire
+- Select 15, nav to pos 7 (UP,LEFT,LEFT), fire
+- Select 12, nav to pos 0 (RIGHT), click small basket
+
+```json
+[[6, 53, 4], 3, 2, 2, 5, [6, 47, 4], 4, 4, 1, 5, [6, 29, 4], 1, 3, 3, 5, [6, 35, 4], 4, [6, 32, 20]]
+```
+
+---
+
+## Level 4
+
+**Target decomposition**:
+1. BR diagonal (pos 3) with **15** → lower-right triangle
+2. TL diagonal (pos 7) with **12** → upper-left area (overwrites overlap)
+3. Left half (pos 6) with **9** → left columns
+4. Small left basket (pos 6) with **11** → rows 3-6, cols 0-2
+
+Sequence:
+- Nav to pos 3 (RIGHT,DOWN,DOWN), fire with 15
+- Select 12, nav to pos 7 (UP,UP,LEFT,LEFT), fire
+- Select 9, nav to pos 6 (DOWN), fire
+- Select 11, click small basket at pos 6
+
+```json
+[4, 2, 2, 5, [6, 35, 4], 1, 1, 3, 3, 5, [6, 59, 4], 2, 5, [6, 41, 4], [6, 13, 39]]
+```
+
+---
+
+## Level 5
+
+**Target decomposition**:
+1. Top half (pos 0) with **9** → base layer for top
+2. BL diagonal (pos 5) with **14** → lower-left triangle
+3. BR diagonal (pos 3) with **12** → lower-right triangle (overwrites overlap)
+4. Small top basket (pos 0) with **8** → rows 0-2, cols 3-6
+
+Sequence:
+- Select 9, fire from pos 0
+- Select 14, nav to pos 5 (LEFT,DOWN,DOWN), fire
+- Select 12, nav to pos 3 (RIGHT,RIGHT), fire
+- Select 8, nav to pos 0 (UP,UP,LEFT), click small basket
+
+```json
+[[6, 59, 4], 5, [6, 47, 4], 3, 2, 2, 5, [6, 35, 4], 4, 4, 5, [6, 53, 4], 1, 1, 3, [6, 32, 20]]
+```
+
+---
+
+## Level 6
+
+**Target decomposition**:
+1. Right half (pos 2) with **14** → right columns
+2. TL diagonal (pos 7) with **8** → upper-left area; uncovered lower-left pixels stay 0
+3. Small top basket (pos 0) with **15** → rows 0-2, cols 3-6
+4. Small left basket (pos 6) with **11** → rows 3-6, cols 0-2
+
+Sequence:
+- Select 14, nav to pos 2 (RIGHT,DOWN), fire
+- Select 8, nav to pos 7 (UP,LEFT,LEFT), fire
+- Select 15, nav to pos 0 (RIGHT), click small basket at pos 0
+- Select 11, nav to pos 6 (LEFT,DOWN), click small basket at pos 6
+
+```json
+[[6, 47, 4], 4, 2, 5, [6, 53, 4], 1, 3, 3, 5, [6, 29, 4], 4, [6, 32, 20], [6, 41, 4], 3, 2, [6, 13, 39]]
+```

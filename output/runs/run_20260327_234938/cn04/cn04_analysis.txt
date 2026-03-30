@@ -1,0 +1,68 @@
+All 5 levels solved and verified against the game engine. Let me present the analysis and solutions.
+
+## Game Mechanics Summary
+
+This is a **connector puzzle**. Each sprite has special **color-8 pixels** that act as connectors. The goal is to **position sprites so all color-8 pixels overlap pairwise** (exactly 2 sprites share each 8-pixel world position). When all 8-pixels are connected, the level is won.
+
+- **Actions 1-4**: Move selected sprite (UP/DOWN/LEFT/RIGHT)
+- **Action 5**: Rotate selected sprite 90° clockwise
+- **Action 6**: Click to select a different sprite (requires display x,y coordinates)
+
+The initially selected sprite is the one closest to the origin (min x²+y²).
+
+**Important**: ACTION6 requires click coordinates. In the action arrays below, `6` is followed by two integers representing display pixel coordinates (x, y) for the click target. The harness needs to consume these as `ActionInput(id=ACTION6, data={"x": dx, "y": dy})`.
+
+---
+
+## Level 1
+
+**Sprites**: vmgdxvpgkh at (4,4), dzfylahsaw at (12,9)
+**Selected**: vmgdxvpgkh (closest to origin)
+**Strategy**: Move vmgdxvpgkh right 3, down 6 to align its 8-pixels with dzfylahsaw's.
+
+No clicks needed — only the selected sprite moves.
+
+```json
+[2, 2, 2, 2, 2, 2, 4, 4, 4]
+```
+
+## Level 2
+
+**Sprites**: glojtydbea at (12,4), grpgefeksy at (4,11), lejuhuvrjg at (3,3)
+**Selected**: lejuhuvrjg (closest to origin — stays put)
+**Strategy**: Click glojtydbea and move it to (8,6), then click grpgefeksy and move it to (4,5). All 8-pixels then pair through grpgefeksy as the hub.
+
+```json
+[6, 45, 15, 2, 2, 3, 3, 3, 3, 6, 24, 36, 1, 1, 1, 1, 1, 1]
+```
+
+## Level 3
+
+**Sprites**: gqxqpkuwab at (11,4), hjqjqsmhmf at (5,5), nhppemmlcd at (9,11)
+**Selected**: hjqjqsmhmf (move right 1), then click gqxqpkuwab (move down 1 + rotate), then click nhppemmlcd (move up 6, left 1, rotate).
+
+```json
+[4, 6, 36, 15, 2, 5, 6, 33, 36, 1, 1, 1, 1, 1, 1, 3, 5]
+```
+
+## Level 4
+
+**Sprites** (all pre-rotated): udepuflbbb at (2,4) rot90, ygyvhkssnz at (9,9) rot270, zhhaofpbyw at (10,3) rot90
+**Selected**: udepuflbbb (move right 9), then click ygyvhkssnz (move up 4), then click zhhaofpbyw (move down 1).
+
+```json
+[4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 33, 30, 1, 1, 1, 1, 6, 48, 12, 2]
+```
+
+## Level 5
+
+**Sprites** (level 5 has hidden sprites — color 4 until selected): supigciwwi at (2,3) rot90, dnkiufrohe at (11,6), lxgvcnpsir at (14,13), oncjjftokv at (5,15) rot90
+**Selected**: supigciwwi (move down 1, right 3), then click and move each other sprite.
+
+```json
+[2, 4, 4, 4, 6, 36, 21, 3, 5, 5, 6, 45, 42, 1, 1, 1, 1, 3, 3, 3, 3, 3, 5, 6, 18, 48, 1, 1, 1, 1, 1, 1]
+```
+
+---
+
+**Verification**: All 5 solutions verified against the actual game engine — every level completes successfully. The convention for ACTION6 in the arrays is: `6, display_x, display_y` (three consecutive integers). The display coordinate mapping is `display = grid * 3 + 3`.

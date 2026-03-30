@@ -1,0 +1,238 @@
+Now let me analyze the full game logic carefully.
+
+## Game Mechanics Analysis
+
+This is a paint-mixing puzzle. The game has:
+
+**Layout:**
+- A 10x10 **canvas** (`xytrjjbyib`) starting all black (color 0), placed at grid position (27, 34)
+- A **basket** that moves around 8 positions in a ring (like compass points around the canvas)
+- **Color buttons** (`pqkenviek`) for selecting paint colors
+- A **gate** (`ctwspzkygu`) on levels 3-6 for painting smaller rectangles
+- A **target pattern** (`eoqnvkspoa-pqwmeN`) to match
+
+**Basket Positions** (mapped to a 3x3 grid, center excluded):
+```
+pos7(0,0)  pos0(0,1)  pos1(0,2)
+pos6(1,0)    [X]      pos2(1,2)
+pos5(2,0)  pos4(2,1)  pos3(2,2)
+```
+
+**Actions:**
+- 1-4 (UP/DOWN/LEFT/RIGHT): Move basket on the 3x3 grid (center blocked)
+- 5 (ACTION5): Pour paint from current basket position onto canvas
+- 6 (ACTION6): Click — selects colors or triggers gate (requires coordinates)
+
+**Pour regions** (Action 5 from each position):
+| Position | Type | Region painted |
+|----------|------|----------------|
+| 0 (top) | horizontal | rows 0:5, all cols |
+| 1 (top-right) | diagonal | row i: cols i:10 (upper-right triangle) |
+| 2 (right) | horizontal | all rows, cols 5:10 |
+| 3 (bottom-right) | diagonal | row i: cols (9-i):10 (lower-right triangle) |
+| 4 (bottom) | horizontal | rows 5:10, all cols |
+| 5 (bottom-left) | diagonal | row i: cols 0:(i+1) (lower-left triangle) |
+| 6 (left) | horizontal | all rows, cols 0:5 |
+| 7 (top-left) | diagonal | row i: cols 0:(10-i) (upper-left triangle) |
+
+**Gate pours** (Action 6 click on gate, levels 3-6):
+| Gate Position | Region painted |
+|---------------|----------------|
+| 0 | rows 0:3, cols 3:7 |
+| 2 | rows 3:7, cols 7:10 |
+| 4 | rows 7:10, cols 3:7 |
+| 6 | rows 3:7, cols 0:3 |
+
+**Win condition:** Canvas must match target at all positions EXCEPT the two diagonals (main diagonal `(i,i)` and anti-diagonal `(i, 9-i)`). That's 80 of the 100 pixels that must match.
+
+**Important limitation:** Action 6 requires click coordinate data. The current harness sends `ActionInput(id=ga)` without data, so Action 6 does nothing. Only Level 1 (which needs just colors 0 and 15) is fully executable. For levels 2-6, I include Action 6 as a placeholder for color/gate selection; the harness would need extension to pass coordinates.
+
+---
+
+## Level 1
+
+**Target (`pqwme1`):**
+```
+rows 0-4: all 0 (black)
+rows 5-9: all 15 (white)
+```
+
+Only needs colors 0 (canvas default) and 15 (starting color). One pour from position 4 (bottom half = white).
+
+**Navigation:** pos0 → RIGHT → pos1 → DOWN → pos2 → DOWN → pos3 → LEFT → pos4, then pour.
+
+```json
+[4, 2, 2, 3, 5]
+```
+
+---
+
+## Level 2
+
+**Target (`pqwme2`):**
+```
+[15,15,15,15,15,15,15,15,15,12]
+[15,15,15,15,15,15,15,15,12,12]
+[15,15,15,15,15,15,15,12,12,12]
+[15,15,15,15,15,15,12,12,12,12]
+[15,15,15,15,15,12,12,12,12,12]
+[ 0, 0, 0, 0,12,12,12,12,12,12]
+[ 0, 0, 0,12,12,12,12,12,12,12]
+[ 0, 0,12,12,12,12,12,12,12,12]
+[ 0,12,12,12,12,12,12,12,12,12]
+[12,12,12,12,12,12,12,12,12,12]
+```
+
+Three regions: upper-left = 15, lower-right triangle = 12, lower-left = 0.
+
+**Pour plan:**
+1. Color 15, pour from pos 0 (top half → rows 0:5 = 15)
+2. Color 12, pour from pos 3 (bottom-right triangle → overwrites right side with 12)
+
+The lower-left stays 0 (unpainted). The anti-diagonal boundary pixels are all excluded from comparison.
+
+**Sequence:** Pour from pos0, select color 12 (Action 6), nav pos0→pos1→pos2→pos3, pour.
+
+```json
+[5, 6, 4, 2, 2, 5]
+```
+
+---
+
+## Level 3
+
+**Target (`pqwme3`):**
+```
+[15,15,15,12,12,12,12,15,15,15]
+[15,15,15,12,12,12,12,15,15,14]
+[15,15,15,12,12,12,12,15,14,14]
+[15,15,15,15,15,15,15,14,14,14]
+[15,15,15,15,15,15,14,14,14,14]
+[15,15,15,15,15,14,14,14,14,14]
+[15,15,15,15, 8,14,14,14,14,14]
+[15,15,15, 8, 8,14,14,14,14,14]
+[15,15, 8, 8, 8,14,14,14,14,14]
+[15, 8, 8, 8, 8,14,14,14,14,14]
+```
+
+Four regions: 15 (upper-left triangle), 14 (right half), 8 (gap in lower-center), 12 (gate block top-center).
+
+**Pour plan (order matters — later overwrites earlier):**
+1. Color 8, pour from pos 5 (lower-left triangle)
+2. Color 14, pour from pos 2 (right half)
+3. Color 15, pour from pos 7 (upper-left triangle) — overwrites left portions of both
+4. Color 12, gate pour from pos 0 (rows 0:3, cols 3:7)
+
+The 8 region survives as the gap between the upper-left triangle (15) and right half (14) in rows 6-9.
+
+**Sequence:** Select 8, nav→pos5, pour; select 14, nav→pos2, pour; select 15, nav→pos7, pour; select 12, nav→pos0, gate click.
+
+```json
+[6, 3, 2, 2, 5, 6, 4, 4, 1, 5, 6, 1, 3, 3, 5, 6, 4, 6]
+```
+
+---
+
+## Level 4
+
+**Target (`pqwme4`):**
+```
+[ 9, 9, 9, 9, 9,12,12,12,12,15]
+[ 9, 9, 9, 9, 9,12,12,12,15,15]
+[ 9, 9, 9, 9, 9,12,12,15,15,15]
+[11,11,11, 9, 9,12,15,15,15,15]
+[11,11,11, 9, 9,15,15,15,15,15]
+[11,11,11, 9, 9,15,15,15,15,15]
+[11,11,11, 9, 9,15,15,15,15,15]
+[ 9, 9, 9, 9, 9,15,15,15,15,15]
+[ 9, 9, 9, 9, 9,15,15,15,15,15]
+[ 9, 9, 9, 9, 9,15,15,15,15,15]
+```
+
+Four regions: 9 (left half), 12 (upper-right triangle), 15 (lower-right triangle), 11 (gate block left-center).
+
+**Pour plan:**
+1. Color 12, pour from pos 2 (right half → cols 5:10 = 12)
+2. Color 15, pour from pos 3 (bottom-right triangle → overwrites lower-right with 15)
+3. Color 9, pour from pos 6 (left half → cols 0:5 = 9)
+4. Color 11, gate pour from pos 6 (rows 3:7, cols 0:3 = 11)
+
+The 12 survives in the upper-right as a wedge between the right-half pour and the bottom-right triangle.
+
+**Sequence:** Select 12, nav→pos2, pour; select 15, nav→pos3, pour; select 9, nav→pos6, pour; select 11, gate click at pos6.
+
+```json
+[6, 4, 2, 5, 6, 2, 5, 6, 3, 3, 1, 5, 6, 6]
+```
+
+---
+
+## Level 5
+
+**Target (`pqwme5`):**
+```
+[14, 9, 9, 8, 8, 8, 8, 9, 9,12]
+[14,14, 9, 8, 8, 8, 8, 9,12,12]
+[14,14,14, 8, 8, 8, 8,12,12,12]
+[14,14,14,14, 9, 9,12,12,12,12]
+[14,14,14,14,14,12,12,12,12,12]
+[14,14,14,14,12,12,12,12,12,12]
+[14,14,14,12,12,12,12,12,12,12]
+[14,14,12,12,12,12,12,12,12,12]
+[14,12,12,12,12,12,12,12,12,12]
+[12,12,12,12,12,12,12,12,12,12]
+```
+
+Four colors: 14 (lower-left triangle), 12 (lower-right triangle), 9 (top half background), 8 (gate block top-center).
+
+**Pour plan:**
+1. Color 9, pour from pos 0 (top half → rows 0:5 = 9)
+2. Color 14, pour from pos 5 (lower-left triangle → overwrites left side)
+3. Color 12, pour from pos 3 (lower-right triangle → overwrites right side)
+4. Color 8, gate pour from pos 0 (rows 0:3, cols 3:7 = 8)
+
+The 9 survives in the gaps between the two triangles in the top rows (the near-diagonal areas).
+
+**Sequence:** Select 9, pour from pos0; select 14, nav→pos5, pour; select 12, nav→pos3, pour; select 8, nav→pos0, gate click.
+
+```json
+[6, 5, 6, 3, 2, 2, 5, 6, 4, 4, 5, 6, 1, 1, 3, 6]
+```
+
+---
+
+## Level 6
+
+**Target (`pqwme6`):**
+```
+[ 8, 8, 8,15,15,15,15, 8, 8, 8]
+[ 8, 8, 8,15,15,15,15, 8, 8,14]
+[ 8, 8, 8,15,15,15,15, 8,14,14]
+[11,11,11, 8, 8, 8, 8,14,14,14]
+[11,11,11, 8, 8, 8,14,14,14,14]
+[11,11,11, 8, 8,14,14,14,14,14]
+[11,11,11, 8, 0,14,14,14,14,14]
+[ 8, 8, 8, 0, 0,14,14,14,14,14]
+[ 8, 8, 0, 0, 0,14,14,14,14,14]
+[ 8, 0, 0, 0, 0,14,14,14,14,14]
+```
+
+Five colors: 8 (upper-left triangle background), 14 (right half), 0 (gap in lower-center), 15 (gate at top), 11 (gate at left).
+
+**Pour plan:**
+1. Color 14, pour from pos 2 (right half → cols 5:10 = 14)
+2. Color 8, pour from pos 7 (upper-left triangle → overwrites left side including over 14)
+3. Color 15, gate pour from pos 0 (rows 0:3, cols 3:7 = 15)
+4. Color 11, gate pour from pos 6 (rows 3:7, cols 0:3 = 11)
+
+The 0 region naturally stays as the gap between the upper-left triangle (8) and right half (14) in rows 6-9 — canvas default black is never painted there.
+
+**Sequence:** Select 14, nav→pos2, pour; select 8, nav→pos7, pour; select 15, nav→pos0, gate; select 11, nav→pos6, gate.
+
+```json
+[6, 4, 2, 5, 6, 1, 3, 3, 5, 6, 4, 6, 6, 3, 2, 6]
+```
+
+---
+
+**Note:** Level 1 is directly solvable. Levels 2-6 require the harness to pass click coordinates with Action 6 — each `6` in those sequences is a placeholder for either a color-button click or a gate click. The game provides helper methods `yrfgxhebei()` (color buttons) and `bmwcxxvjum()` (gate) that return the needed `ActionInput` objects with coordinates.

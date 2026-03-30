@@ -1,0 +1,51 @@
+{
+  "game_id": "cd82-fb555c5d",
+  "timestamp": "20260328_112908",
+  "levels_solved": 6,
+  "total_levels": 6,
+  "analysis_time_seconds": 1745.2,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 5,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": true,
+      "moves": 6,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 3,
+      "solved": true,
+      "moves": 18,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 4,
+      "solved": true,
+      "moves": 15,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 5,
+      "solved": true,
+      "moves": 16,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 6,
+      "solved": true,
+      "moves": 16,
+      "time_seconds": 0,
+      "reason": "solved"
+    }
+  ]
+}

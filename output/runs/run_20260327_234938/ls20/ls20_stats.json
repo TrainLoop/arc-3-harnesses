@@ -1,0 +1,23 @@
+{
+  "game_id": "ls20-9607627b",
+  "timestamp": "20260328_032917",
+  "levels_solved": 1,
+  "total_levels": 7,
+  "analysis_time_seconds": 266.1,
+  "level_stats": [
+    {
+      "level": 1,
+      "solved": true,
+      "moves": 13,
+      "time_seconds": 0,
+      "reason": "solved"
+    },
+    {
+      "level": 2,
+      "solved": false,
+      "moves": 0,
+      "time_seconds": 0,
+      "reason": "moves exhausted"
+    }
+  ]
+}
