@@ -1,36 +1,40 @@
 #!/usr/bin/env python3
 """
-LLM Harness for ARC-AGI-3 Games
-Demonstrates an LLM (Claude) analyzing source code to build a programmatic solver.
-Uses BFS pathfinding + Claude API fallback for complex levels.
+Claude Code Harness for ARC-AGI-3 Games
+
+Uses Claude Code CLI to analyze game source code and solve each level.
+Uses arcengine to load games locally and get per-level frames.
+
+Usage:
+    python harness.py --game ls20
+    python harness.py --game ls20 --model opus
 """
 
-import sys
-import os
-import json
-import uuid
-import time
-import re
+import argparse
 import importlib.util
-from datetime import datetime, timezone
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
 from pathlib import Path
-from collections import deque
-from typing import List, Dict, Tuple, Set, Optional, Any
+from typing import List
 
-import numpy as np
+ACTION_NAMES = {1: "UP", 2: "DOWN", 3: "LEFT", 4: "RIGHT",
+                5: "ACTION5", 6: "ACTION6", 7: "ACTION7"}
+NAME_TO_ACTION = {"UP": 1, "DOWN": 2, "LEFT": 3, "RIGHT": 4,
+                  "U": 1, "D": 2, "L": 3, "R": 4}
 
-# ============================================================
-# Action Constants
-# ============================================================
-UP, DOWN, LEFT, RIGHT = 1, 2, 3, 4
-ACTION_DELTAS = {UP: (0, -1), DOWN: (0, 1), LEFT: (-1, 0), RIGHT: (1, 0)}
-REVERSE_ACTION = {UP: DOWN, DOWN: UP, LEFT: RIGHT, RIGHT: LEFT}
-ACTION_NAMES = {1: "UP", 2: "DOWN", 3: "LEFT", 4: "RIGHT"}
+# All valid GameAction IDs (some games use 5/6/7 for cycle/click/undo)
+VALID_ACTIONS = {1, 2, 3, 4, 5, 6, 7}
 
 
 # ============================================================
-# Game Loading
+# Game Loading (via arcengine)
 # ============================================================
+
 def load_game(game_dir: str):
     """Load game class from source.py and instantiate it."""
     source_path = os.path.join(game_dir, "source.py")
@@ -42,951 +46,701 @@ def load_game(game_dir: str):
         obj = getattr(mod, name)
         if isinstance(obj, type) and issubclass(obj, ARCBaseGame) and obj is not ARCBaseGame:
             return obj()
-    raise ValueError("No game class found in source.py")
-
-
-# ============================================================
-# Changer Movement Simulation (mirrors dboxixicic logic)
-# ============================================================
-DIR_DELTAS = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 0=down, 1=right, 2=up, 3=left
-
-
-def simulate_changer(boundary_sprite, start_x, start_y, cell, n_steps):
-    """
-    Simulate changer movement within a boundary sprite.
-    Returns list of (x, y) positions for steps 0..n_steps.
-    Position at index t is the changer's position AFTER t steps.
-    """
-    bx, by = boundary_sprite.x, boundary_sprite.y
-    bw, bh = boundary_sprite.width, boundary_sprite.height
-    pixels = boundary_sprite.pixels  # numpy array
-
-    def is_valid(x, y):
-        if x < bx or x >= bx + bw or y < by or y >= by + bh:
-            return False
-        px, py = x - bx, y - by
-        return int(pixels[py, px]) >= 0
-
-    x, y = start_x, start_y
-    direction = 0
-    positions = [(x, y)]
-
-    for _ in range(n_steps):
-        moved = False
-        for d_off in [0, -1, 1, 2]:
-            d = (direction + d_off) % 4
-            dx, dy = DIR_DELTAS[d]
-            nx, ny = x + dx * cell, y + dy * cell
-            if is_valid(nx, ny):
-                direction = d
-                x, y = nx, ny
-                moved = True
-                break
-        positions.append((x, y))
-
-    return positions
-
-
-# ============================================================
-# Grid-Based BFS Solver
-# ============================================================
-class GridSolver:
-    """Solves a level using BFS pathfinding derived from source code analysis."""
-
-    def __init__(self, game):
-        self.game = game
-        self.pw = game.gisrhqpee  # player width (movement step X)
-        self.ph = game.tbwnoxqgc  # player height (movement step Y)
-        gs = game.current_level.grid_size or (64, 64)
-        self.grid_w, self.grid_h = gs
-
-        # Obstacles
-        self.obstacles: Set[Tuple[int, int]] = set()
-        for s in game.current_level.get_sprites_by_tag("ihdgageizm"):
-            self.obstacles.add((s.x, s.y))
-
-        # Player state (needed early for push block computation)
-        self.start_pos = (game.gudziatsk.x, game.gudziatsk.y)
-
-        # Goals
-        self.goals = []
-        for i, s in enumerate(game.plrpelhym):
-            self.goals.append({
-                "x": s.x, "y": s.y,
-                "shape": game.ldxlnycps[i],
-                "color_idx": game.yjdexjsoa[i],
-                "rotation_idx": game.ehwheiwsk[i],
-            })
-
-        # Push blocks: model as teleportation (not obstacles)
-        self.push_block_positions: Set[Tuple[int, int]] = set()
-        self.push_teleports: Dict[Tuple[int, int], Tuple[int, int]] = {}
-        self._compute_push_teleports(game)
-
-        # Static changer positions
-        self.changers: Dict[str, List[Tuple[int, int]]] = {}
-        for tag, name in [("ttfwljgohq", "shape"), ("soyhouuebz", "color"), ("rhsxkxzdjz", "rotation")]:
-            sprites = game.current_level.get_sprites_by_tag(tag)
-            if sprites:
-                self.changers[name] = [(s.x, s.y) for s in sprites]
-
-        # Collectibles
-        self.collectibles = [(s.x, s.y) for s in game.current_level.get_sprites_by_tag("npxgalaybz")]
-        self.shape = game.fwckfzsyc
-        self.color_idx = game.hiaauhahz
-        self.rotation_idx = game.cklxociuu
-        self.n_shapes = len(game.ijessuuig)
-        self.n_colors = len(game.tnkekoeuk)
-
-        # Step budget
-        self.max_steps = game._step_counter_ui.osgviligwp
-        self.decrement = game._step_counter_ui.efipnixsvl
-        self.step_budget = self.max_steps // self.decrement
-
-        # Moving changer simulations
-        self.moving_changers: Dict[str, List[Tuple[int, int]]] = {}
-        self._build_moving_changer_sims()
-
-    def _build_moving_changer_sims(self):
-        """Precompute positions for moving changers."""
-        for ctrl in self.game.wsoslqeku:
-            sprite = ctrl._sprite
-            boundary = ctrl.bfdcztirdu
-            if boundary and sprite.tags:
-                for tag, name in [("ttfwljgohq", "shape"), ("soyhouuebz", "color"), ("rhsxkxzdjz", "rotation")]:
-                    if tag in sprite.tags:
-                        positions = simulate_changer(
-                            boundary, sprite.x, sprite.y, ctrl._cell, 300
-                        )
-                        self.moving_changers[name] = positions
-                        break
-
-    def is_blocked(self, new_x: int, new_y: int, extra_obs: Optional[Set] = None) -> bool:
-        """Check if position is blocked by obstacles."""
-        all_obs = self.obstacles | self.push_block_positions
-        if extra_obs:
-            all_obs = all_obs | extra_obs
-        for ox, oy in all_obs:
-            if new_x <= ox < new_x + self.pw and new_y <= oy < new_y + self.ph:
-                return True
-        return False
-
-    def in_bounds(self, x: int, y: int) -> bool:
-        return 0 <= x < self.grid_w and 0 <= y < self.grid_h
-
-    def bfs_path(self, start: Tuple[int, int], target: Tuple[int, int],
-                 extra_obs: Optional[Set] = None) -> Optional[List[int]]:
-        """BFS shortest path from start to target, avoiding obstacles."""
-        sx, sy = start
-        tx, ty = target
-        if sx == tx and sy == ty:
-            return []
-
-        queue = deque([(sx, sy, [])])
-        visited = {(sx, sy)}
-
-        while queue:
-            x, y, actions = queue.popleft()
-            for action in [UP, DOWN, LEFT, RIGHT]:
-                dc, dr = ACTION_DELTAS[action]
-                nx, ny = x + dc * self.pw, y + dr * self.ph
-                if not self.in_bounds(nx, ny):
-                    continue
-                if self.is_blocked(nx, ny, extra_obs):
-                    continue
-                # Push block teleportation
-                if (nx, ny) in self.push_teleports:
-                    nx, ny = self.push_teleports[(nx, ny)]
-                    if not self.in_bounds(nx, ny):
-                        continue
-                if (nx, ny) in visited:
-                    continue
-                new_actions = actions + [action]
-                if nx == tx and ny == ty:
-                    return new_actions
-                visited.add((nx, ny))
-                queue.append((nx, ny, new_actions))
-        return None
-
-    def bfs_timed_budget(self, start: Tuple[int, int], changer_positions: List[Tuple[int, int]],
-                         start_time: int, budget: int, coll_list: List[Tuple[int, int]],
-                         coll_mask: int, obs: Optional[Set] = None,
-                         max_time: int = 200, min_remaining: int = 0
-                         ) -> Optional[Tuple[List[int], int, int, Tuple[int, int]]]:
-        """BFS with time + budget + collectible support for moving changer interception.
-        Returns (actions, remaining_budget, coll_mask, final_position) or None."""
-        sx, sy = start
-        coll_idx = {pos: i for i, pos in enumerate(coll_list)}
-        best: Dict[Tuple, int] = {}
-        init = (sx, sy, start_time, coll_mask)
-        best[init] = budget
-        queue = deque([(sx, sy, start_time, budget, coll_mask, [])])
-
-        while queue:
-            x, y, t, b, mask, actions = queue.popleft()
-            if t >= max_time or t + 1 >= len(changer_positions):
-                continue
-            key = (x, y, t, mask)
-            if best.get(key, -1) > b:
-                continue
-
-            for action in [UP, DOWN, LEFT, RIGHT]:
-                dc, dr = ACTION_DELTAS[action]
-                nx, ny = x + dc * self.pw, y + dr * self.ph
-                nt = t + 1
-                if not self.in_bounds(nx, ny) or self.is_blocked(nx, ny, obs):
-                    nx, ny = x, y
-                if (nx, ny) in self.push_teleports:
-                    nx, ny = self.push_teleports[(nx, ny)]
-
-                nb, nmask = b - 1, mask
-                if (nx, ny) in coll_idx:
-                    ci = coll_idx[(nx, ny)]
-                    if not (mask & (1 << ci)):
-                        nb = self.step_budget
-                        nmask = mask | (1 << ci)
-                if nb < 0:
-                    continue
-
-                cx, cy = changer_positions[nt]
-                if nx <= cx < nx + self.pw and ny <= cy < ny + self.ph:
-                    if nb >= min_remaining:
-                        return (actions + [action], nb, nmask, (nx, ny))
-
-                if nb <= min_remaining:
-                    # Not enough budget to continue (need to find collectible)
-                    pass  # still explore - might find collectible
-
-                nkey = (nx, ny, nt, nmask)
-                if nb > best.get(nkey, -1):
-                    best[nkey] = nb
-                    queue.append((nx, ny, nt, nb, nmask, actions + [action]))
-        return None
-
-    def bfs_timed(self, start: Tuple[int, int], changer_positions: List[Tuple[int, int]],
-                  start_time: int = 0, extra_obs: Optional[Set] = None,
-                  max_time: int = 150) -> Optional[List[int]]:
-        """BFS with time dimension to intercept a moving changer."""
-        sx, sy = start
-        queue = deque([(sx, sy, start_time, [])])
-        visited = {(sx, sy, start_time)}
-
-        while queue:
-            x, y, t, actions = queue.popleft()
-            if t >= max_time or t + 1 >= len(changer_positions):
-                continue
-
-            for action in [UP, DOWN, LEFT, RIGHT]:
-                dc, dr = ACTION_DELTAS[action]
-                nx, ny = x + dc * self.pw, y + dr * self.ph
-                nt = t + 1
-
-                if not self.in_bounds(nx, ny) or self.is_blocked(nx, ny, extra_obs):
-                    nx, ny = x, y  # blocked, stay in place
-
-                # Check if changer at nt overlaps with player at (nx, ny)
-                cx, cy = changer_positions[nt]
-                if nx <= cx < nx + self.pw and ny <= cy < ny + self.ph:
-                    return actions + [action]
-
-                state = (nx, ny, nt)
-                if state not in visited:
-                    visited.add(state)
-                    queue.append((nx, ny, nt, actions + [action]))
-        return None
-
-    def find_step_off_actions(self, pos: Tuple[int, int],
-                              extra_obs: Optional[Set] = None) -> Optional[List[int]]:
-        """Find 2 actions to step off a position and back on."""
-        x, y = pos
-        for action in [UP, DOWN, LEFT, RIGHT]:
-            dc, dr = ACTION_DELTAS[action]
-            nx, ny = x + dc * self.pw, y + dr * self.ph
-            if self.in_bounds(nx, ny) and not self.is_blocked(nx, ny, extra_obs):
-                return [action, REVERSE_ACTION[action]]
-        return None
-
-    def compute_position_after_actions(self, start: Tuple[int, int], actions: List[int],
-                                       extra_obs: Optional[Set] = None) -> Tuple[int, int]:
-        """Compute player position after executing actions."""
-        x, y = start
-        for action in actions:
-            dc, dr = ACTION_DELTAS[action]
-            nx, ny = x + dc * self.pw, y + dr * self.ph
-            if self.in_bounds(nx, ny) and not self.is_blocked(nx, ny, extra_obs):
-                if (nx, ny) in self.push_teleports:
-                    nx, ny = self.push_teleports[(nx, ny)]
-                x, y = nx, ny
-        return (x, y)
-
-    def _compute_push_teleports(self, game):
-        """Compute push block teleportation: trigger_position -> destination."""
-        # Build obstacle+goal set for push distance computation
-        wall_set: Set[Tuple[int, int]] = set()
-        for s in game.current_level.get_sprites_by_tag("ihdgageizm"):
-            wall_set.add((s.x, s.y))
-        for g in self.goals:
-            wall_set.add((g["x"], g["y"]))
-
-        origin_x = self.start_pos[0] % self.pw
-        origin_y = self.start_pos[1] % self.ph
-
-        for s in game.current_level.get_sprites_by_tag("gbvqrjtaqo"):
-            if s.name.endswith("_t"):
-                dx, dy = 0, -1
-            elif s.name.endswith("_b"):
-                dx, dy = 0, 1
-            elif s.name.endswith("_r"):
-                dx, dy = 1, 0
-            elif s.name.endswith("_l"):
-                dx, dy = -1, 0
-            else:
-                continue
-
-            # Compute push distance (mirrors ullzqnksoj logic)
-            wall_cx = s.x + dx
-            wall_cy = s.y + dy
-            push_dist = 0
-            for dist in range(1, 12):
-                check_x = wall_cx + dx * s.width * dist
-                check_y = wall_cy + dy * s.height * dist
-                if (check_x, check_y) in wall_set:
-                    push_dist = max(0, dist - 1)
-                    break
-            if push_dist <= 0:
-                continue
-
-            disp_x = dx * s.width * push_dist
-            disp_y = dy * s.height * push_dist
-
-            # Compute trigger positions (player bbox overlaps push block bbox)
-            for px in range(s.x - self.pw + 1, s.x + s.width):
-                for py in range(s.y - self.ph + 1, s.y + s.height):
-                    if ((px - origin_x) % self.pw == 0 and
-                            (py - origin_y) % self.ph == 0 and
-                            0 <= px < self.grid_w and 0 <= py < self.grid_h):
-                        dest_x = px + disp_x
-                        dest_y = py + disp_y
-                        if 0 <= dest_x < self.grid_w and 0 <= dest_y < self.grid_h:
-                            self.push_teleports[(px, py)] = (dest_x, dest_y)
-
-    def _collection_pos(self, cx: int, cy: int) -> Optional[Tuple[int, int]]:
-        """Find the grid position where player would collect item at (cx, cy)."""
-        origin_x = self.start_pos[0] % self.pw
-        origin_y = self.start_pos[1] % self.ph
-        gx = origin_x + ((cx - origin_x) // self.pw) * self.pw
-        gy = origin_y + ((cy - origin_y) // self.ph) * self.ph
-        if gx <= cx < gx + self.pw and gy <= cy < gy + self.ph:
-            if self.in_bounds(gx, gy):
-                return (gx, gy)
-        return None
-
-    def _goal_obstacles(self, exclude_idx: int = -1) -> Set[Tuple[int, int]]:
-        obs = set()
-        for j, g in enumerate(self.goals):
-            if j != exclude_idx:
-                obs.add((g["x"], g["y"]))
-        return obs
-
-    def bfs_multi_waypoint(self, start: Tuple[int, int],
-                           waypoints: List[Tuple[int, int]],
-                           budget: int,
-                           coll_list: List[Tuple[int, int]],
-                           coll_mask: int,
-                           obs: Optional[Set] = None,
-                           changer_avoid_after: int = -1,
-                           changer_positions: Optional[Set] = None
-                           ) -> Optional[Tuple[List[int], int, int]]:
-        """
-        Multi-waypoint BFS with budget and collectible support.
-        Visits waypoints in order. Consecutive same-position waypoints
-        require leaving and returning (for changer revisits).
-        After changer_avoid_after waypoints, changer_positions are obstacles.
-        Returns (actions, remaining_budget, coll_mask) or None.
-        """
-        n_wp = len(waypoints)
-        if n_wp == 0:
-            return ([], budget, coll_mask)
-
-        # leave_required[i] = True if must leave waypoints[i] before next
-        leave_req = []
-        for i in range(n_wp - 1):
-            leave_req.append(waypoints[i] == waypoints[i + 1])
-        leave_req.append(False)
-
-        coll_idx = {pos: i for i, pos in enumerate(coll_list)}
-        changer_set = changer_positions or set()
-
-        # State: (x, y, budget, coll_mask, wp_idx, must_leave)
-        # Optimization: track best budget per (x, y, coll_mask, wp_idx, must_leave)
-        best_budget: Dict[Tuple, int] = {}
-
-        sx, sy = start
-        init_state = (sx, sy, budget, coll_mask, 0, False)
-        queue = deque([(init_state, [])])
-        key = (sx, sy, coll_mask, 0, False)
-        best_budget[key] = budget
-
-        while queue:
-            state, actions = queue.popleft()
-            x, y, b, mask, wp, ml = state
-
-            # Prune: if we've seen this position with better budget, skip
-            key = (x, y, mask, wp, ml)
-            if best_budget.get(key, -1) > b:
-                continue
-
-            for action in [UP, DOWN, LEFT, RIGHT]:
-                dc, dr = ACTION_DELTAS[action]
-                nx, ny = x + dc * self.pw, y + dr * self.ph
-                if not self.in_bounds(nx, ny):
-                    continue
-                if self.is_blocked(nx, ny, obs):
-                    continue
-
-                # Changer avoidance after all changer visits
-                extra = changer_set if wp >= changer_avoid_after and changer_avoid_after >= 0 else set()
-                if (nx, ny) in extra:
-                    continue
-
-                # Push block teleportation
-                if (nx, ny) in self.push_teleports:
-                    nx, ny = self.push_teleports[(nx, ny)]
-                    if not self.in_bounds(nx, ny):
-                        continue
-
-                nb, nmask = b - 1, mask
-                if (nx, ny) in coll_idx:
-                    ci = coll_idx[(nx, ny)]
-                    if not (mask & (1 << ci)):
-                        nb = self.step_budget
-                        nmask = mask | (1 << ci)
-                if nb < 0:
-                    continue
-
-                new_ml = ml
-                new_wp = wp
-
-                # Check if leaving current waypoint
-                if ml and new_wp > 0 and (nx, ny) != waypoints[new_wp - 1]:
-                    new_ml = False
-
-                # Check if reaching next waypoint
-                if not new_ml and new_wp < n_wp and (nx, ny) == waypoints[new_wp]:
-                    new_wp += 1
-                    if new_wp < n_wp and leave_req[new_wp - 1]:
-                        new_ml = True
-                    if new_wp >= n_wp:
-                        return (actions + [action], nb, nmask)
-
-                nkey = (nx, ny, nmask, new_wp, new_ml)
-                if nb > best_budget.get(nkey, -1):
-                    best_budget[nkey] = nb
-                    queue.append(((nx, ny, nb, nmask, new_wp, new_ml), actions + [action]))
-
-        return None
-
-    def solve_level(self) -> Optional[List[int]]:
-        """Plan action sequence solving the level with multi-waypoint BFS."""
-        if not self.goals:
-            return []
-
-        coll_list: List[Tuple[int, int]] = []
-        for cx, cy in self.collectibles:
-            cp = self._collection_pos(cx, cy)
-            if cp:
-                coll_list.append(cp)
-
-        all_actions: List[int] = []
-        pos = self.start_pos
-        budget = self.step_budget
-        coll_mask = 0
-        current_shape = self.shape
-        current_color = self.color_idx
-        current_rotation = self.rotation_idx
-        current_time = 0
-
-        for gi, goal in enumerate(self.goals):
-            shape_steps = (goal["shape"] - current_shape) % self.n_shapes
-            color_steps = (goal["color_idx"] - current_color) % self.n_colors
-            rotation_steps = (goal["rotation_idx"] - current_rotation) % 4
-
-            changer_visits: List[Tuple[str, int]] = []
-            if shape_steps > 0 and "shape" in self.changers:
-                changer_visits.append(("shape", shape_steps))
-            if color_steps > 0 and "color" in self.changers:
-                changer_visits.append(("color", color_steps))
-            if rotation_steps > 0 and "rotation" in self.changers:
-                changer_visits.append(("rotation", rotation_steps))
-
-            goal_obs = self._goal_obstacles(gi)
-            goal_pos = (goal["x"], goal["y"])
-
-            # Check for moving changers - visit them FIRST for maximum budget
-            has_moving = any(ct in self.moving_changers for ct, _ in changer_visits)
-            if has_moving:
-                moving_first = [cv for cv in changer_visits if cv[0] in self.moving_changers]
-                static_after = [cv for cv in changer_visits if cv[0] not in self.moving_changers]
-                changer_visits = moving_first + static_after
-
-            if has_moving:
-                # Handle each changer separately, goal at the end
-                all_changer_positions: Set[Tuple[int, int]] = set()
-                for ct, nv in changer_visits:
-                    if ct not in self.moving_changers and ct in self.changers:
-                        all_changer_positions.add(self.changers[ct][0])
-
-                for changer_type, n_visits in changer_visits:
-                    if changer_type in self.moving_changers:
-                        positions = self.moving_changers[changer_type]
-                        for visit in range(n_visits):
-                            remaining_stepoffs = max(0, n_visits - visit - 1)
-                            reserved = remaining_stepoffs * 2
-                            result = self.bfs_timed_budget(
-                                pos, positions, current_time, budget,
-                                coll_list, coll_mask, goal_obs,
-                                min_remaining=reserved)
-                            if result is None:
-                                return None
-                            actions, budget, coll_mask, new_pos = result
-                            all_actions.extend(actions)
-                            current_time += len(actions)
-                            pos = new_pos
-                            if visit < n_visits - 1:
-                                step_off = self.find_step_off_actions(pos, goal_obs)
-                                if step_off is None:
-                                    return None
-                                all_actions.extend(step_off)
-                                budget -= len(step_off)
-                                current_time += len(step_off)
-                    else:
-                        changer_pos = self.changers[changer_type][0]
-                        wp = [changer_pos] * n_visits
-                        result = self.bfs_multi_waypoint(
-                            pos, wp, budget, coll_list, coll_mask, goal_obs)
-                        if result is None:
-                            return None
-                        actions, budget, coll_mask = result
-                        all_actions.extend(actions)
-                        current_time += len(actions)
-                        pos = changer_pos
-
-                    if changer_type == "shape":
-                        current_shape = (current_shape + n_visits) % self.n_shapes
-                    elif changer_type == "color":
-                        current_color = (current_color + n_visits) % self.n_colors
-                    elif changer_type == "rotation":
-                        current_rotation = (current_rotation + n_visits) % 4
-
-                # Navigate to goal after all changers
-                result = self.bfs_multi_waypoint(
-                    pos, [goal_pos], budget, coll_list, coll_mask, goal_obs,
-                    changer_avoid_after=0, changer_positions=all_changer_positions)
-                if result is None:
-                    return None
-                actions, budget, coll_mask = result
-                all_actions.extend(actions)
-                current_time += len(actions)
-                pos = goal_pos
-            else:
-                # Build full waypoint list: all changer visits + goal
-                waypoints: List[Tuple[int, int]] = []
-                changer_positions_set: Set[Tuple[int, int]] = set()
-                n_changer_wps = 0
-
-                for changer_type, n_visits in changer_visits:
-                    changer_pos = self.changers[changer_type][0]
-                    changer_positions_set.add(changer_pos)
-                    for _ in range(n_visits):
-                        waypoints.append(changer_pos)
-                    n_changer_wps += n_visits
-
-                waypoints.append(goal_pos)
-
-                result = self.bfs_multi_waypoint(
-                    pos, waypoints, budget, coll_list, coll_mask, goal_obs,
-                    changer_avoid_after=n_changer_wps,
-                    changer_positions=changer_positions_set)
-                if result is None:
-                    return None
-
-                actions, budget, coll_mask = result
-                all_actions.extend(actions)
-                current_time += len(actions)
-                pos = goal_pos
-
-                for changer_type, n_visits in changer_visits:
-                    if changer_type == "shape":
-                        current_shape = (current_shape + n_visits) % self.n_shapes
-                    elif changer_type == "color":
-                        current_color = (current_color + n_visits) % self.n_colors
-                    elif changer_type == "rotation":
-                        current_rotation = (current_rotation + n_visits) % 4
-
-        return all_actions
-
-
-# ============================================================
-# LLM Solver (Claude API fallback)
-# ============================================================
-class LLMSolver:
-    """Fallback solver using Claude API for complex levels."""
-
-    def __init__(self, source_code: str):
-        self.client = None
-        self.source_code = source_code
-        try:
-            import anthropic
-            self.client = anthropic.Anthropic()
-        except Exception:
-            pass
-
-    def solve(self, state_desc: str) -> Optional[List[int]]:
-        if not self.client:
-            return None
-
-        prompt = f"""You are solving an ARC-AGI-3 puzzle game. Analyze the source code and game state to produce an optimal action sequence.
-
-GAME SOURCE CODE (key mechanics):
-- Actions: 1=UP(-Y), 2=DOWN(+Y), 3=LEFT(-X), 4=RIGHT(+X)
-- Player moves by 5 pixels per step
-- Obstacles (ihdgageizm) block movement
-- Shape changer (ttfwljgohq): cycles shape index +1 mod 6
-- Color changer (soyhouuebz): cycles color index +1 mod 4
-- Rotation changer (rhsxkxzdjz): cycles rotation index +1 mod 4
-- Collectible (npxgalaybz): refills step counter to max
-- Goal (rjlbuycveu): must stand on it with EXACT matching shape/color/rotation
-- Wrong attributes on goal = BLOCKED + penalty
-- Win = all goals satisfied
-
-FULL SOURCE CODE:
-```python
-{self.source_code}
-```
-
-CURRENT STATE:
-{state_desc}
-
-INSTRUCTIONS:
-1. Analyze the maze layout from obstacle positions
-2. Determine which changers to visit and how many times
-3. Plan the shortest path: player -> changers -> goal
-4. Account for step budget
-
-Return ONLY a JSON array of action numbers (1-4). Example: [3, 3, 1, 1, 4, 4, 2]"""
-
-        try:
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=8192,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            text = response.content[0].text
-            match = re.search(r'\[[\d\s,]+\]', text)
-            if match:
-                return json.loads(match.group())
-        except Exception as e:
-            print(f"    LLM error: {e}")
-        return None
-
-
-# ============================================================
-# State Description Builder (for LLM)
-# ============================================================
-def build_state_description(game) -> str:
-    """Build human-readable state description for LLM solver."""
-    g = game
-    pw, ph = g.gisrhqpee, g.tbwnoxqgc
+    raise ValueError(f"No ARCBaseGame subclass found in {source_path}")
+
+
+def render_frame_text(frame) -> str:
+    """Render a 64x64 frame as a compact text grid for Claude Code."""
+    if isinstance(frame[0], list) and isinstance(frame[0][0], list):
+        frame = frame[-1]
+    h, w = len(frame), len(frame[0])
+    step = 5
     lines = []
-    lines.append(f"Level: {g._current_level_index + 1} / {len(g._levels)}")
-    lines.append(f"Player: ({g.gudziatsk.x}, {g.gudziatsk.y}), size {pw}x{ph}")
-    lines.append(f"Shape: {g.fwckfzsyc} (of {len(g.ijessuuig)})")
-    lines.append(f"Color index: {g.hiaauhahz} (of {len(g.tnkekoeuk)})")
-    lines.append(f"Rotation index: {g.cklxociuu} (rotations: 0,90,180,270)")
-    lines.append(f"Steps: {g._step_counter_ui.current_steps}/{g._step_counter_ui.osgviligwp}, decrement: {g._step_counter_ui.efipnixsvl}")
-    lines.append(f"Lives: {g.aqygnziho}")
-
-    lines.append("\nGoals:")
-    for i, s in enumerate(g.plrpelhym):
-        lines.append(f"  [{i}] pos=({s.x},{s.y}) need: shape={g.ldxlnycps[i]}, color_idx={g.yjdexjsoa[i]}, rot_idx={g.ehwheiwsk[i]}")
-
-    lines.append("\nChangers:")
-    for tag, name in [("ttfwljgohq", "shape"), ("soyhouuebz", "color"), ("rhsxkxzdjz", "rotation")]:
-        for s in g.current_level.get_sprites_by_tag(tag):
-            moving = " [MOVING]" if any(tag in (c._sprite.tags or []) for c in g.wsoslqeku) else ""
-            lines.append(f"  {name}: ({s.x},{s.y}){moving}")
-
-    if g.current_level.get_sprites_by_tag("npxgalaybz"):
-        lines.append("\nCollectibles (step refills):")
-        for s in g.current_level.get_sprites_by_tag("npxgalaybz"):
-            lines.append(f"  ({s.x},{s.y})")
-
-    # Build text grid map
-    lines.append("\nGrid (row=Y, col=X, step=5):")
-    grid = {}
-    for s in g.current_level.get_sprites_by_tag("ihdgageizm"):
-        grid[(s.x, s.y)] = '#'
-    for s in g.current_level.get_sprites_by_tag("gbvqrjtaqo"):
-        grid[(s.x, s.y)] = 'B'
-    for s in g.current_level.get_sprites_by_tag("npxgalaybz"):
-        grid[(s.x, s.y)] = '*'
-    for s in g.current_level.get_sprites_by_tag("ttfwljgohq"):
-        grid[(s.x, s.y)] = 'S'
-    for s in g.current_level.get_sprites_by_tag("soyhouuebz"):
-        grid[(s.x, s.y)] = 'C'
-    for s in g.current_level.get_sprites_by_tag("rhsxkxzdjz"):
-        grid[(s.x, s.y)] = 'R'
-    for i, s in enumerate(g.plrpelhym):
-        grid[(s.x, s.y)] = f'G'
-    grid[(g.gudziatsk.x, g.gudziatsk.y)] = 'P'
-
-    x_positions = sorted(set(x for x, y in grid.keys()))
-    y_positions = sorted(set(y for x, y in grid.keys()))
-
-    header = "     " + " ".join(f"{x:3d}" for x in x_positions)
+    header = "    " + "".join(f"{x // step:3d}" for x in range(0, w, step))
     lines.append(header)
-    for y in y_positions:
-        row = f"{y:3d}  "
-        for x in x_positions:
-            cell = grid.get((x, y), ' ')
-            row += f"  {cell} "
-        lines.append(row)
-
+    for y in range(0, h, step):
+        row_label = f"{y // step:3d} "
+        cells = []
+        for x in range(0, w, step):
+            cells.append(f"{frame[y][x]:3d}")
+        lines.append(row_label + "".join(cells))
     return "\n".join(lines)
 
 
 # ============================================================
-# Game Runner
+# Claude Code CLI Interface
 # ============================================================
-class GameRunner:
-    """Runs the game, solves each level, records gameplay."""
 
-    def __init__(self, game_dir: str, game_id: str = None):
-        self.game_dir = game_dir
-        self.game = load_game(game_dir)
-        self.game_id = game_id or Path(game_dir).name
-        self.source_code = Path(os.path.join(game_dir, "source.py")).read_text()
-        self.session_id = str(uuid.uuid4())
-        self.recording_lines: List[str] = []
-        self.level_stats: List[Dict] = []
+def call_claude_code(prompt: str, model: str = None, timeout: int = 1200) -> tuple:
+    """Call Claude Code CLI with stream-json and return (response_text, metadata, trace).
 
-        # Load metadata
-        meta_path = os.path.join(game_dir, "metadata.json")
-        self.metadata = json.loads(Path(meta_path).read_text()) if os.path.exists(meta_path) else {}
+    Returns:
+        response: Final text response from Claude.
+        metadata: Dict with token usage, cost, timing, turn info.
+        trace: List of trace events, each a dict with keys:
+            - turn: int (which assistant turn, 1-indexed)
+            - type: "thinking" | "tool_call" | "tool_result" | "text"
+            - content: str (thinking text, tool input, tool output, or response text)
+            - tool_name: str (only for tool_call/tool_result)
+            - tokens: dict (per-turn token usage from the assistant message, if available)
+    """
+    cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose",
+           "--dangerously-skip-permissions"]
 
-    def record_step(self, frame_data, action_name: str = "RESET"):
-        """Record one game step to JSONL."""
-        entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": {
-                "game_id": frame_data.game_id,
-                "state": frame_data.state,
-                "levels_completed": frame_data.levels_completed,
-                "win_levels": frame_data.win_levels,
-                "action_input": {
-                    "id": action_name,
-                    "data": {"game_id": frame_data.game_id},
-                    "reasoning": None,
-                },
-                "guid": frame_data.guid or self.session_id,
-                "full_reset": frame_data.full_reset,
-                "available_actions": frame_data.available_actions,
-                "frame": frame_data.frame,
+    if model:
+        cmd.extend(["--model", model])
+
+    empty_meta = {
+        "input_tokens": 0, "output_tokens": 0,
+        "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+        "num_turns": 0, "total_cost_usd": 0, "duration_ms": 0,
+        "context_window": 0, "max_output_tokens": 0,
+    }
+
+    try:
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, start_new_session=True,
+        )
+        stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"  [ERROR] Claude Code timed out after {timeout}s, killing process group")
+        import signal
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except OSError:
+            proc.kill()
+        proc.wait()
+        return "", {**empty_meta, "timed_out": True}, []
+
+    stderr_text = (stderr or "").strip()
+    stdout_text = (stdout or "").strip()
+
+    if proc.returncode != 0:
+        print(f"  [ERROR] Claude Code exited with code {proc.returncode}")
+        print(f"  [ERROR] stderr: {stderr_text[:1000]}")
+        return "", empty_meta, []
+
+    if not stdout_text:
+        print(f"  [ERROR] Claude Code returned empty stdout")
+        return "", empty_meta, []
+
+    # Parse stream-json: one JSON object per line
+    events = []
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    # Build trace and extract result
+    trace = []
+    response = ""
+    meta = dict(empty_meta)
+    turn_num = 0
+    # Map tool_use_id -> tool_name for correlating tool results
+    tool_id_to_name = {}
+
+    for evt in events:
+        evt_type = evt.get("type", "")
+
+        if evt_type == "assistant":
+            turn_num += 1
+            msg = evt.get("message", {})
+            usage = msg.get("usage", {})
+            turn_tokens = {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+                "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
             }
-        }
-        self.recording_lines.append(json.dumps(entry))
+            for block in msg.get("content", []):
+                block_type = block.get("type", "")
+                if block_type == "thinking":
+                    trace.append({
+                        "turn": turn_num, "type": "thinking",
+                        "content": block.get("thinking", ""),
+                        "tokens": turn_tokens,
+                    })
+                elif block_type == "tool_use":
+                    tool_name = block.get("name", "")
+                    tool_id = block.get("id", "")
+                    tool_id_to_name[tool_id] = tool_name
+                    trace.append({
+                        "turn": turn_num, "type": "tool_call",
+                        "tool_name": tool_name,
+                        "content": json.dumps(block.get("input", {}), indent=2),
+                        "tokens": turn_tokens,
+                    })
+                elif block_type == "text":
+                    trace.append({
+                        "turn": turn_num, "type": "text",
+                        "content": block.get("text", ""),
+                        "tokens": turn_tokens,
+                    })
 
-    def run(self) -> Dict:
-        """Run the game, solving each level."""
-        from arcengine import ActionInput, GameAction
+        elif evt_type == "user":
+            # Tool results come inside "user" events
+            msg = evt.get("message", {})
+            for block in msg.get("content", []):
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_result":
+                    tool_id = block.get("tool_use_id", "")
+                    tool_name = tool_id_to_name.get(tool_id, "unknown")
+                    content = block.get("content", "")
+                    if isinstance(content, list):
+                        parts = []
+                        for c in content:
+                            if isinstance(c, dict):
+                                parts.append(c.get("text", str(c)))
+                            else:
+                                parts.append(str(c))
+                        content = "\n".join(parts)
+                    trace.append({
+                        "turn": turn_num, "type": "tool_result",
+                        "tool_name": tool_name,
+                        "content": str(content),
+                    })
 
-        print(f"Game: {self.game_id}")
-        print(f"Levels: {len(self.game._levels)}")
-        print(f"Player size: {self.game.gisrhqpee}x{self.game.tbwnoxqgc}")
+        elif evt_type == "result":
+            response = evt.get("result", "")
+            usage = evt.get("usage", {})
+            model_usage = evt.get("modelUsage", {})
+            model_info = next(iter(model_usage.values()), {}) if model_usage else {}
 
-        # Initial reset
-        reset_frame = self.game.perform_action(ActionInput(id=GameAction.RESET))
-        self.record_step(reset_frame, "RESET")
+            meta = {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+                "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+                "num_turns": evt.get("num_turns", 0),
+                "total_cost_usd": evt.get("total_cost_usd", 0),
+                "duration_ms": evt.get("duration_ms", 0),
+                "duration_api_ms": evt.get("duration_api_ms", 0),
+                "context_window": model_info.get("contextWindow", 0),
+                "max_output_tokens": model_info.get("maxOutputTokens", 0),
+                "stop_reason": evt.get("stop_reason", ""),
+                "session_id": evt.get("session_id", ""),
+            }
 
-        total_actions = 0
-        levels_solved = 0
-        game_action_map = {1: GameAction.ACTION1, 2: GameAction.ACTION2,
-                           3: GameAction.ACTION3, 4: GameAction.ACTION4}
+    total_input = meta["input_tokens"] + meta["cache_creation_input_tokens"] + meta["cache_read_input_tokens"]
+    meta["total_tokens"] = total_input + meta["output_tokens"]
+    if meta["context_window"] > 0:
+        meta["context_utilization_pct"] = round(100.0 * total_input / meta["context_window"], 1)
+    else:
+        meta["context_utilization_pct"] = 0
 
-        for level_idx in range(len(self.game._levels)):
-            print(f"\n{'='*60}")
-            print(f"LEVEL {level_idx + 1}")
-            level_start = time.time()
-            level_actions = 0
-            level_solved = False
-            max_retries = 3  # one per life
+    # Summarize trace
+    n_thinking = sum(1 for t in trace if t["type"] == "thinking")
+    n_tool_calls = sum(1 for t in trace if t["type"] == "tool_call")
+    thinking_chars = sum(len(t["content"]) for t in trace if t["type"] == "thinking")
 
-            for retry in range(max_retries):
-                # Build solver from current game state
-                solver = GridSolver(self.game)
-                actions = solver.solve_level()
+    print(f"  [USAGE] input={meta['input_tokens']:,} output={meta['output_tokens']:,} "
+          f"cache_create={meta['cache_creation_input_tokens']:,} cache_read={meta['cache_read_input_tokens']:,}")
+    print(f"  [USAGE] total_tokens={meta['total_tokens']:,} turns={meta['num_turns']} "
+          f"cost=${meta['total_cost_usd']:.2f} context_used={meta['context_utilization_pct']}%")
+    print(f"  [TRACE] {n_thinking} thinking blocks ({thinking_chars:,} chars), "
+          f"{n_tool_calls} tool calls, {turn_num} assistant turns")
 
-                solver_type = "BFS"
-                if actions is None:
-                    solver_type = "LLM"
-                    print(f"  BFS solver failed (retry {retry}), trying LLM...")
-                    state_desc = build_state_description(self.game)
-                    llm = LLMSolver(self.source_code)
-                    actions = llm.solve(state_desc)
+    if response:
+        print(f"  [OK] Got response ({len(response)} chars)")
+    else:
+        print(f"  [WARN] No result text in response")
 
-                if actions is None:
-                    print(f"  No solution found for level {level_idx + 1}")
-                    break
+    return response, meta, trace
 
-                # Print plan info
-                budget_info = f"budget={solver.step_budget}" if solver_type == "BFS" else ""
-                print(f"  [{solver_type}] Plan: {len(actions)} actions {budget_info}")
-                if len(actions) <= 30:
-                    print(f"    Actions: {[ACTION_NAMES[a] for a in actions]}")
-                else:
-                    print(f"    First 20: {[ACTION_NAMES[a] for a in actions[:20]]}...")
 
-                # Execute actions
-                prev_level = self.game._current_level_index
-                prev_lives = self.game.aqygnziho if hasattr(self.game, 'aqygnziho') else 3
+def _is_valid_action(a) -> bool:
+    """Check if an action entry is valid: int 1-7 or [6, x, y] click."""
+    if isinstance(a, int) and a in VALID_ACTIONS:
+        return True
+    if isinstance(a, list) and len(a) == 3 and a[0] == 6:
+        return all(isinstance(v, int) for v in a)
+    return False
 
-                for i, action in enumerate(actions):
-                    ga = game_action_map.get(action)
-                    if ga is None:
-                        continue
 
-                    frame = self.game.perform_action(ActionInput(id=ga))
-                    self.record_step(frame, f"ACTION{action}")
-                    level_actions += 1
-                    total_actions += 1
+def _action_label(a) -> str:
+    """Human-readable label for an action entry."""
+    if isinstance(a, list) and len(a) == 3 and a[0] == 6:
+        return f"CLICK({a[1]},{a[2]})"
+    return ACTION_NAMES.get(a, f"?{a}")
 
-                    # Check level advancement
-                    if self.game._current_level_index != prev_level:
-                        level_solved = True
-                        break
 
-                    # Check game state
-                    if frame.state == "WIN":
-                        level_solved = True
-                        break
-                    if frame.state == "GAME_OVER":
-                        print(f"  GAME OVER at action {i+1}")
-                        break
+def parse_move_sequence(text: str) -> list:
+    """Extract a move sequence from text.
 
-                    # Detect life loss (step exhaustion reset)
-                    cur_lives = self.game.aqygnziho if hasattr(self.game, 'aqygnziho') else 3
-                    if cur_lives < prev_lives:
-                        print(f"  Lost a life (steps exhausted) at action {i+1}, {cur_lives} lives left")
-                        prev_lives = cur_lives
-                        break  # break out to retry with fresh state
+    Accepts action IDs 1-7 and click tuples [6, x, y].
+    Prefers arrays inside ```json fenced blocks, then bare JSON arrays,
+    then direction names.
+    """
+    # First: look for ```json [...] ``` fenced blocks (may contain nested [6,x,y])
+    for match in re.finditer(r'```json\s*\n?\s*(\[.+?\])\s*\n?\s*```', text, re.DOTALL):
+        try:
+            actions = json.loads(match.group(1))
+            if (isinstance(actions, list) and len(actions) >= 2
+                    and all(_is_valid_action(a) for a in actions)):
+                return actions
+        except (json.JSONDecodeError, TypeError):
+            continue
 
-                if level_solved:
-                    break
-                if frame.state == "GAME_OVER":
-                    break
+    # Then: bare JSON arrays, require length >= 5 to avoid coordinate/table lists
+    for match in re.finditer(r'\[[\d\s,\[\]]+\]', text):
+        try:
+            actions = json.loads(match.group())
+            if (isinstance(actions, list) and len(actions) >= 5
+                    and all(_is_valid_action(a) for a in actions)):
+                return actions
+        except (json.JSONDecodeError, TypeError):
+            continue
 
-            elapsed = time.time() - level_start
-            status = "SOLVED" if level_solved else "FAILED"
-            print(f"  >> Level {level_idx + 1}: {status} in {level_actions} actions ({elapsed:.2f}s)")
+    # Try comma/space-separated direction names (only UPPERCASE to avoid prose matches)
+    name_matches = re.findall(r'\b(UP|DOWN|LEFT|RIGHT)\b', text)
+    if len(name_matches) >= 5:
+        return [NAME_TO_ACTION[n] for n in name_matches]
 
-            self.level_stats.append({
-                "level": level_idx + 1,
-                "solved": level_solved,
-                "actions": level_actions,
-                "time_seconds": round(elapsed, 2),
-            })
+    return []
 
-            if level_solved:
-                levels_solved += 1
-            else:
-                break  # stop if level not solved
 
-            if frame.state in ("WIN", "GAME_OVER"):
-                break
+def parse_all_level_moves(analysis_text: str, n_levels: int) -> dict:
+    """Parse per-level move sequences from the analysis response.
 
-        return {
-            "game_id": self.game_id,
-            "levels_solved": levels_solved,
-            "total_levels": len(self.game._levels),
-            "total_actions": total_actions,
-            "level_stats": self.level_stats,
-        }
+    Looks for sections like "### Level N" followed by a JSON array of
+    action IDs (preferably in a ```json block).
+    Returns {level_num: [actions]} for each level found.
+    """
+    result = {}
 
-    def save_recording(self, recordings_dir: str) -> str:
-        """Save recording to JSONL file."""
-        session_dir = os.path.join(recordings_dir, self.session_id)
-        os.makedirs(session_dir, exist_ok=True)
-        game_full_id = self.metadata.get("game_id", self.game_id)
-        filename = f"{game_full_id}-{self.session_id}.jsonl"
-        filepath = os.path.join(session_dir, filename)
-        with open(filepath, "w") as f:
-            for line in self.recording_lines:
-                f.write(line + "\n")
-        return filepath
+    # Split by level headers
+    level_pattern = re.compile(
+        r'(?:^|\n)(?:#{1,4}\s*)?Level\s+(\d+)\b', re.IGNORECASE
+    )
+    matches = list(level_pattern.finditer(analysis_text))
+
+    for i, m in enumerate(matches):
+        level_num = int(m.group(1))
+        if level_num < 1 or level_num > n_levels:
+            continue
+
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(analysis_text)
+        section = analysis_text[start:end]
+
+        moves = parse_move_sequence(section)
+        if moves:
+            result[level_num] = moves
+
+    return result
 
 
 # ============================================================
-# Main
+# Main Harness
 # ============================================================
-def main():
-    game_id = sys.argv[1] if len(sys.argv) > 1 else "ls20"
-    base_dir = Path(__file__).parent
+
+def run_game(game_id: str, base_dir: Path, model: str = None,
+             run_dir: str = None):
+    """Run the full harness for a single game."""
+    from arcengine import ActionInput, GameAction
+
     game_dir = base_dir / "dataset" / "games" / game_id
-    recordings_dir = base_dir / "recordings"
+    source_path = game_dir / "source.py"
+    meta_path = game_dir / "metadata.json"
 
-    if not game_dir.exists():
-        print(f"Error: Game directory not found: {game_dir}")
+    if not source_path.exists():
+        print(f"Error: {source_path} not found")
         sys.exit(1)
 
-    print(f"ARC-AGI-3 LLM Harness")
-    print(f"{'='*60}")
+    metadata = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    game_full_id = metadata.get("game_id", game_id)
 
-    runner = GameRunner(str(game_dir), game_id)
-    result = runner.run()
+    # Load game locally via arcengine
+    game = load_game(str(game_dir))
+    reset_frame = game.perform_action(ActionInput(id=GameAction.RESET))
+    win_levels = reset_frame.win_levels
+    available_actions = reset_frame.available_actions
 
-    # Save recording
-    rec_path = runner.save_recording(str(recordings_dir))
-    print(f"\nRecording: {rec_path}")
+    print(f"Game: {game_full_id}")
+    print(f"Levels: {win_levels}")
+    print(f"Available actions: {available_actions}")
 
-    # Save results
-    results_path = base_dir / f"{game_id}_results.txt"
-    with open(str(results_path), "w") as f:
-        f.write(f"ARC-AGI-3 LLM Harness Results\n")
-        f.write(f"{'='*60}\n")
-        f.write(f"Game: {game_id}\n")
-        f.write(f"Date: {datetime.now().isoformat()}\n")
-        f.write(f"Harness: Programmatic BFS solver (from LLM source code analysis)\n")
-        f.write(f"         + Claude API fallback for complex levels\n")
-        f.write(f"\n")
-        f.write(f"RESULTS\n")
-        f.write(f"{'-'*60}\n")
-        f.write(f"Levels solved: {result['levels_solved']} / {result['total_levels']}\n")
-        f.write(f"Total actions: {result['total_actions']}\n\n")
+    # Prepare output directory: output/runs/<run_dir>/<game_id>/
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if run_dir:
+        out_dir = base_dir / "output" / "runs" / run_dir / game_id
+    else:
+        out_dir = base_dir / "output" / game_id
+    os.makedirs(out_dir, exist_ok=True)
+    reasoning_path = out_dir / f"{game_id}_reasoning.txt"
+    moves_path = out_dir / f"{game_id}_moves.txt"
 
-        for stat in result['level_stats']:
-            status = "SOLVED" if stat['solved'] else "FAILED"
-            f.write(f"  Level {stat['level']}: {status}")
-            f.write(f" | {stat['actions']} actions")
-            f.write(f" | {stat['time_seconds']}s\n")
+    reasoning_lines: List[str] = []
+    moves_lines: List[str] = []
 
-        f.write(f"\n{'='*60}\n")
-        f.write(f"Session: {runner.session_id}\n")
-        f.write(f"Recording: {rec_path}\n")
-        f.write(f"\nApproach:\n")
-        f.write(f"  The harness uses Claude (LLM) to analyze the game's source.py\n")
-        f.write(f"  and understand game mechanics (movement, collision, changers,\n")
-        f.write(f"  goals, step budget). From this understanding, it builds a\n")
-        f.write(f"  programmatic BFS solver that:\n")
-        f.write(f"  1. Extracts obstacle/goal/changer positions from game state\n")
-        f.write(f"  2. Computes needed attribute changes (shape/color/rotation)\n")
-        f.write(f"  3. Plans optimal waypoint sequence (changers then goal)\n")
-        f.write(f"  4. Uses BFS pathfinding between waypoints\n")
-        f.write(f"  5. Handles moving changers via time-aware BFS\n")
-        f.write(f"  6. Falls back to Claude API for levels that defy BFS\n")
+    # Build action name string from available actions
+    action_desc_parts = []
+    for a in sorted(available_actions):
+        name = ACTION_NAMES.get(a, f"ACTION{a}")
+        action_desc_parts.append(f"{a}={name}")
+    action_desc = ", ".join(action_desc_parts)
 
-    print(f"Results: {results_path}")
-    print(f"\nSummary: {result['levels_solved']}/{result['total_levels']} levels solved, {result['total_actions']} total actions")
+    # ------------------------------------------------------------------
+    # Single-pass: ask Claude Code to analyze AND produce moves
+    # ------------------------------------------------------------------
+    print(f"\n--- Analyzing source code and solving all levels ---")
+    # Build click instruction if ACTION6 is available
+    click_instruction = ""
+    if 6 in available_actions:
+        click_instruction = (
+            "\n\nIMPORTANT: For click actions (ACTION6), encode as [6, x, y] where x,y "
+            "are the pixel coordinates to click. Example with clicks:\n"
+            "```json\n[4, 2, [6, 45, 33], 3, 3, [6, 12, 50], 5]\n```\n"
+            "Each [6, x, y] entry clicks at screen position (x, y). "
+            "Read the source code to determine the correct coordinates for buttons, "
+            "gates, tiles, or other clickable elements."
+        )
+
+    analysis_prompt = (
+        f"Read {source_path}. This is an ARC-AGI-3 game with {win_levels} levels.\n\n"
+        f"Available actions: {action_desc}\n\n"
+        f"For EACH level (1 through {win_levels}), analyze the game mechanics and "
+        f"produce the exact move sequence to beat it.\n\n"
+        f"For each level, end your analysis with the moves as a JSON array, e.g.:\n"
+        f"```json\n[3, 3, 1, 1, 4, 4, 2]\n```\n"
+        f"{click_instruction}\n\n"
+        f"Make sure every level has a ```json [...] ``` block with the action sequence."
+    )
+    t0 = time.time()
+    # 3 hour timeout
+    timeout = 10800
+    print(f"  Timeout: {timeout}s")
+    analysis_resp, analysis_meta, analysis_trace = call_claude_code(
+        analysis_prompt, model=model, timeout=timeout)
+    analysis_elapsed = time.time() - t0
+
+    reasoning_lines.append("=" * 60)
+    reasoning_lines.append("SOURCE CODE ANALYSIS & SOLUTIONS")
+    reasoning_lines.append("=" * 60)
+    reasoning_lines.append(analysis_resp or "(no response)")
+    reasoning_lines.append("")
+
+    # Save analysis
+    analysis_file = out_dir / f"{game_id}_analysis.txt"
+    with open(analysis_file, "w") as f:
+        f.write(analysis_resp or "(no response)")
+
+    # Save reasoning trace
+    trace_file = out_dir / f"{game_id}_trace.txt"
+    with open(trace_file, "w") as f:
+        for entry in analysis_trace:
+            turn = entry.get("turn", "?")
+            etype = entry["type"]
+            tool = entry.get("tool_name", "")
+            content = entry["content"]
+            tokens = entry.get("tokens", {})
+
+            f.write(f"{'='*60}\n")
+            header = f"[Turn {turn}] {etype.upper()}"
+            if tool:
+                header += f" ({tool})"
+            if tokens:
+                tok_in = tokens.get("input_tokens", 0)
+                tok_out = tokens.get("output_tokens", 0)
+                header += f"  [in={tok_in:,} out={tok_out:,}]"
+            f.write(header + "\n")
+            f.write(f"{'='*60}\n")
+            f.write(content + "\n\n")
+
+    print(f"  Analysis complete ({analysis_elapsed:.1f}s). Saved to {analysis_file}")
+    print(f"  Trace: {trace_file} ({len(analysis_trace)} events)")
+
+    # Parse moves for all levels from the analysis
+    all_level_moves = parse_all_level_moves(analysis_resp or "", win_levels)
+    print(f"  Parsed moves for levels: {sorted(all_level_moves.keys())}")
+
+    # ------------------------------------------------------------------
+    # Execute moves for each level
+    # ------------------------------------------------------------------
+    game_action_map = {
+        1: GameAction.ACTION1, 2: GameAction.ACTION2,
+        3: GameAction.ACTION3, 4: GameAction.ACTION4,
+    }
+    # Add optional actions if available
+    for act_id, ga_name in [(5, "ACTION5"), (6, "ACTION6"), (7, "ACTION7")]:
+        if hasattr(GameAction, ga_name):
+            game_action_map[act_id] = getattr(GameAction, ga_name)
+
+    levels_solved = 0
+    latest_frame = reset_frame
+    level_stats: List[dict] = []
+
+    for level_idx in range(win_levels):
+        level_num = level_idx + 1
+        print(f"\n{'=' * 60}")
+        print(f"LEVEL {level_num}/{win_levels}")
+
+        actions = all_level_moves.get(level_num, [])
+        if not actions:
+            print(f"  No moves found in analysis for level {level_num}")
+            moves_lines.append(f"Level {level_num}: FAILED (no moves in analysis)")
+            level_stats.append({
+                "level": level_num, "solved": False, "moves": 0,
+                "time_seconds": 0, "reason": "no moves parsed",
+            })
+            break
+
+        move_names = [_action_label(a) for a in actions]
+        print(f"  Moves ({len(actions)}): {', '.join(move_names[:30])}{'...' if len(actions) > 30 else ''}")
+        moves_lines.append(f"Level {level_num}: {', '.join(move_names)}")
+
+        # Execute the moves on the local game engine
+        prev_level_idx = game._current_level_index
+        level_solved = False
+        fail_reason = "moves exhausted"
+
+        for i, act in enumerate(actions):
+            # Handle click actions: [6, x, y]
+            if isinstance(act, list) and len(act) == 3 and act[0] == 6:
+                ga = game_action_map.get(6)
+                if ga is None:
+                    continue
+                frame_data = game.perform_action(
+                    ActionInput(id=ga, data={"x": act[1], "y": act[2]}))
+            else:
+                ga = game_action_map.get(act)
+                if ga is None:
+                    continue
+                frame_data = game.perform_action(ActionInput(id=ga))
+
+            if game._current_level_index != prev_level_idx:
+                level_solved = True
+                latest_frame = frame_data
+                print(f"  Level {level_num} SOLVED after {i + 1} actions!")
+                break
+
+            state_str = str(frame_data.state)
+            if "WIN" in state_str:
+                level_solved = True
+                latest_frame = frame_data
+                print(f"  WIN after {i + 1} actions!")
+                break
+            if "GAME_OVER" in state_str:
+                fail_reason = "game over"
+                print(f"  GAME OVER at action {i + 1}")
+                break
+
+        level_stats.append({
+            "level": level_num,
+            "solved": level_solved,
+            "moves": len(actions) if level_solved else 0,
+            "time_seconds": 0,  # all reasoning happened in the analysis pass
+            "reason": "solved" if level_solved else fail_reason,
+        })
+
+        if level_solved:
+            levels_solved += 1
+        else:
+            print(f"  Level {level_num} FAILED")
+            break
+
+        if "WIN" in str(latest_frame.state):
+            break
+
+    # ------------------------------------------------------------------
+    # Save output files
+    # ------------------------------------------------------------------
+    with open(reasoning_path, "w") as f:
+        f.write("\n".join(reasoning_lines))
+
+    with open(moves_path, "w") as f:
+        f.write("\n".join(moves_lines))
+
+    # Build trace summary
+    trace_summary = {
+        "total_events": len(analysis_trace),
+        "thinking_blocks": sum(1 for t in analysis_trace if t["type"] == "thinking"),
+        "thinking_chars": sum(len(t["content"]) for t in analysis_trace if t["type"] == "thinking"),
+        "tool_calls": sum(1 for t in analysis_trace if t["type"] == "tool_call"),
+        "tool_results": sum(1 for t in analysis_trace if t["type"] == "tool_result"),
+        "text_blocks": sum(1 for t in analysis_trace if t["type"] == "text"),
+        "assistant_turns": max((t.get("turn", 0) for t in analysis_trace), default=0),
+        "tools_used": {},
+    }
+    for t in analysis_trace:
+        if t["type"] == "tool_call":
+            name = t.get("tool_name", "unknown")
+            trace_summary["tools_used"][name] = trace_summary["tools_used"].get(name, 0) + 1
+
+    stats = {
+        "game_id": game_full_id,
+        "timestamp": timestamp,
+        "levels_solved": levels_solved,
+        "total_levels": win_levels,
+        "analysis_time_seconds": round(analysis_elapsed, 1),
+        "level_stats": level_stats,
+        "context_usage": analysis_meta,
+        "trace_summary": trace_summary,
+    }
+    stats_path = out_dir / f"{game_id}_stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(stats, f, indent=2)
+
+    # Generate plots
+    plots_dir = out_dir / "plots"
+    os.makedirs(plots_dir, exist_ok=True)
+    generate_plots(stats, plots_dir, game_id)
+
+    print(f"\n{'=' * 60}")
+    print(f"RESULT: {levels_solved}/{win_levels} levels solved")
+    print(f"Reasoning log: {reasoning_path}")
+    print(f"Moves log:     {moves_path}")
+    print(f"Stats:         {stats_path}")
+    print(f"Plots:         {plots_dir}/")
+
+    return levels_solved, win_levels
+
+
+def generate_plots(stats: dict, plots_dir: Path, game_id: str):
+    """Generate plots for time, score, and context usage."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("  matplotlib not installed, skipping plots")
+        return
+
+    level_stats = stats["level_stats"]
+    total_levels = stats["total_levels"]
+    analysis_time = stats["analysis_time_seconds"]
+    ctx = stats.get("context_usage", {})
+
+    levels = [s["level"] for s in level_stats]
+    solved = [s["solved"] for s in level_stats]
+
+    # Time plot: step function over wall-clock (all reasoning in analysis)
+    timestamps_plot = [0, analysis_time]
+    levels_won = [0, 0]
+    for s in level_stats:
+        if s["solved"]:
+            timestamps_plot.append(analysis_time)
+            levels_won.append(levels_won[-1])
+            timestamps_plot.append(analysis_time)
+            levels_won.append(levels_won[-1] + 1)
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(timestamps_plot, levels_won, color="#1565C0", linewidth=2)
+    ax.axvline(x=analysis_time, color="#2E7D32", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Levels won")
+    ax.set_title(f"{game_id}")
+    ax.set_yticks(range(0, total_levels + 1))
+    ax.set_ylim(-0.2, total_levels + 0.2)
+    ax.set_xlim(left=0)
+    fig.tight_layout()
+    fig.savefig(plots_dir / f"{game_id}_time.png", dpi=150)
+    plt.close(fig)
+
+    # Score plot: step function over cumulative steps
+    cum_steps = [0]
+    cum_solved = [0]
+    running_steps = 0
+    running_solved = 0
+    for s in level_stats:
+        if s["solved"]:
+            running_steps += s["moves"]
+            cum_steps.append(running_steps)
+            cum_solved.append(running_solved)
+            running_solved += 1
+            cum_steps.append(running_steps)
+            cum_solved.append(running_solved)
+
+    if cum_steps[-1] > 0:
+        cum_steps.append(cum_steps[-1])
+        cum_solved.append(cum_solved[-1])
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(cum_steps, cum_solved, color="#1565C0", linewidth=2)
+    ax.set_xlabel("Steps")
+    ax.set_ylabel("Levels won")
+    ax.set_title(f"{game_id} ({running_solved}/{total_levels})")
+    ax.set_yticks(range(0, total_levels + 1))
+    ax.set_ylim(-0.2, total_levels + 0.2)
+    ax.set_xlim(left=0)
+    fig.tight_layout()
+    fig.savefig(plots_dir / f"{game_id}_score.png", dpi=150)
+    plt.close(fig)
+
+    # Context usage plot (if metadata available)
+    if ctx and ctx.get("context_window", 0) > 0:
+        context_window = ctx["context_window"]
+        input_tok = ctx.get("input_tokens", 0)
+        cache_create = ctx.get("cache_creation_input_tokens", 0)
+        cache_read = ctx.get("cache_read_input_tokens", 0)
+        output_tok = ctx.get("output_tokens", 0)
+        total_input = input_tok + cache_create + cache_read
+        unused = max(0, context_window - total_input)
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+        # Left: token breakdown stacked bar
+        ax = axes[0]
+        categories = ["Input\n(new)", "Cache\nCreate", "Cache\nRead", "Output"]
+        values = [input_tok, cache_create, cache_read, output_tok]
+        colors = ["#1565C0", "#2E7D32", "#7CB342", "#F57C00"]
+        ax.bar(categories, values, color=colors)
+        ax.set_ylabel("Tokens")
+        ax.set_title(f"{game_id} — Token Breakdown")
+        for i, v in enumerate(values):
+            if v > 0:
+                ax.text(i, v + context_window * 0.01, f"{v:,}", ha="center", va="bottom", fontsize=8)
+
+        # Right: context utilization pie
+        ax = axes[1]
+        sizes = [input_tok, cache_create, cache_read, unused]
+        labels = [f"Input ({input_tok:,})", f"Cache Create ({cache_create:,})",
+                  f"Cache Read ({cache_read:,})", f"Unused ({unused:,})"]
+        pie_colors = ["#1565C0", "#2E7D32", "#7CB342", "#E0E0E0"]
+        ax.pie(sizes, labels=labels, colors=pie_colors, autopct="%1.1f%%",
+               startangle=90, textprops={"fontsize": 8})
+        ax.set_title(f"Context Utilization: {ctx.get('context_utilization_pct', 0)}% of {context_window:,}")
+
+        fig.tight_layout()
+        fig.savefig(plots_dir / f"{game_id}_context.png", dpi=150)
+        plt.close(fig)
+
+    print(f"  Plots saved to {plots_dir}/")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code Harness for ARC-AGI-3")
+    parser.add_argument("--game", required=True,
+                        help="Game folder ID (one of the 25 folder names in dataset/games/)")
+    parser.add_argument("--model", default=None,
+                        help="Claude model to use (e.g., opus, sonnet)")
+    parser.add_argument("--run-dir", default=None,
+                        help="Shared run directory name (e.g., run_20260328_010000). "
+                             "Outputs go to output/runs/<run-dir>/<game>/")
+    args = parser.parse_args()
+
+    base_dir = Path(__file__).parent
+
+    games_dir = base_dir / "dataset" / "games"
+    valid_ids = sorted(d.name for d in games_dir.iterdir()
+                       if d.is_dir() and (d / "source.py").exists())
+    if args.game not in valid_ids:
+        print(f"Error: Unknown game '{args.game}'")
+        print(f"Valid games: {', '.join(valid_ids)}")
+        sys.exit(1)
+
+    print(f"ARC-AGI-3 Claude Code Harness")
+    print(f"{'=' * 60}")
+
+    run_game(args.game, base_dir, model=args.model, run_dir=args.run_dir)
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
     main()
